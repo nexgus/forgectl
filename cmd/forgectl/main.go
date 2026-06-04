@@ -2,15 +2,18 @@
 // GitLab through their REST APIs.
 //
 // This file defines the command-line surface (the noun-verb grammar described
-// in docs/cli.md) and wires each command to a handler. The handlers are not
-// implemented yet; this is the CLI skeleton.
+// in docs/cli.md) and dispatches via kong's Run methods. Each command's Run
+// builds a pkg/forge client from the globals and hands the command's own fields
+// to it; the work lives in pkg/forge, which receives what it needs as
+// parameters and reads no global state.
 package main
 
 import (
-	"fmt"
+	"os"
 
 	"github.com/alecthomas/kong"
 
+	"forgectl/pkg/forge"
 	"forgectl/pkg/version"
 )
 
@@ -25,6 +28,19 @@ type Globals struct {
 	User      string `help:"Override the user."`
 
 	Version kong.VersionFlag `short:"V" help:"Print version information and exit."`
+}
+
+// client builds a forge client from the globals. Each Run method calls it so
+// forge depends on no CLI type and reads no shared state.
+func (g *Globals) client() *forge.Client {
+	return forge.New(forge.Config{
+		Source:    g.Source,
+		Host:      g.Host,
+		Insecure:  g.Insecure,
+		Token:     g.Token,
+		TokenFile: g.TokenFile,
+		User:      g.User,
+	})
 }
 
 // CLI is the root of the command tree.
@@ -53,6 +69,10 @@ type ReleaseListCmd struct {
 	JSON bool   `help:"Emit JSON for scripting instead of human-readable text."`
 }
 
+func (c *ReleaseListCmd) Run(g *Globals) error {
+	return g.client().ReleaseList(c.Repo, c.JSON)
+}
+
 // ReleaseCreateCmd implements:
 // forgectl release create <repo> <version> (--note STR | --note-file PATH) [--commit COMMIT]
 type ReleaseCreateCmd struct {
@@ -63,11 +83,19 @@ type ReleaseCreateCmd struct {
 	Commit   string `placeholder:"COMMIT" help:"Commit the new tag points to: a commit SHA, or 'latest' for the default branch HEAD. Required only when the tag does not yet exist."`
 }
 
+func (c *ReleaseCreateCmd) Run(g *Globals) error {
+	return g.client().ReleaseCreate(c.Repo, c.Version, c.Note, c.NoteFile, c.Commit)
+}
+
 // AssetUploadCmd implements: forgectl asset upload <repo> <version> <path>[=NAME]...
 type AssetUploadCmd struct {
 	Repo    string   `arg:"" name:"repo" help:"Target repository as an owner/repo path."`
 	Version string   `arg:"" name:"version" help:"Version string; the release need not exist yet."`
 	Paths   []string `arg:"" name:"path" help:"One or more local files, each optionally suffixed with =NAME to rename the uploaded asset."`
+}
+
+func (c *AssetUploadCmd) Run(g *Globals) error {
+	return g.client().AssetUpload(c.Repo, c.Version, c.Paths)
 }
 
 // AssetDownloadCmd implements:
@@ -81,25 +109,32 @@ type AssetDownloadCmd struct {
 	Overwrite bool     `help:"Overwrite the target file if it already exists."`
 }
 
-// errNotImplemented is returned by every command handler until the
-// corresponding behavior is implemented.
-func errNotImplemented(cmd string) error {
-	return fmt.Errorf("%s: not implemented yet", cmd)
+func (c *AssetDownloadCmd) Run(g *Globals) error {
+	return g.client().AssetDownload(c.Repo, c.Version, c.Patterns, c.Dir, c.Output, c.Overwrite)
 }
 
-func (c *ReleaseListCmd) Run(g *Globals) error   { return errNotImplemented("release list") }
-func (c *ReleaseCreateCmd) Run(g *Globals) error { return errNotImplemented("release create") }
-func (c *AssetUploadCmd) Run(g *Globals) error   { return errNotImplemented("asset upload") }
-func (c *AssetDownloadCmd) Run(g *Globals) error { return errNotImplemented("asset download") }
-
-func main() {
-	var cli CLI
-	ctx := kong.Parse(
-		&cli,
+// newParser builds the kong parser bound to target. main binds it to the parsed
+// CLI; tests bind it to a fresh CLI to exercise the grammar in isolation.
+func newParser(target *CLI) (*kong.Kong, error) {
+	return kong.New(
+		target,
 		kong.Name("forgectl"),
 		kong.Description("Query and operate releases and assets across GitHub and GitLab."),
 		kong.UsageOnError(),
 		kong.Vars{"version": version.Full()},
 	)
+}
+
+func main() {
+	var cli CLI
+	parser, err := newParser(&cli)
+	if err != nil {
+		panic(err)
+	}
+	ctx, err := parser.Parse(os.Args[1:])
+	parser.FatalIfErrorf(err)
+
+	// kong dispatches to the selected command's Run method, injecting the
+	// globals it asks for.
 	ctx.FatalIfErrorf(ctx.Run(&cli.Globals))
 }
