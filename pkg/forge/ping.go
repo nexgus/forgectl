@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 )
 
@@ -41,12 +40,7 @@ func (c *Client) Ping() error {
 		return err
 	}
 
-	for _, w := range a.Warnings {
-		fmt.Fprintln(os.Stderr, "warning: "+w)
-	}
-	if c.cfg.Insecure {
-		fmt.Fprintln(os.Stderr, "warning: TLS certificate verification is disabled (--insecure); use only on trusted hosts")
-	}
+	emitWarnings(a, c.cfg.Insecure)
 
 	c.printSettings(base, host, a)
 

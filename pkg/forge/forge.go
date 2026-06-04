@@ -3,12 +3,19 @@
 // settings through New, per-command inputs through each method — so it depends
 // on no CLI types and can be tested in isolation.
 //
-// Ping is implemented (see ping.go), along with the shared connection and
-// credential resolution it needs (endpoint.go, credential.go). The release and
-// asset handlers are still the wiring skeleton and report notImplemented.
+// The shared connection and credential resolution live in endpoint.go and
+// credential.go; the platform-agnostic command orchestration in releases.go and
+// assets.go; and the per-source REST work behind the platform interface in
+// github.go and gitlab.go. ping.go is the first command and exercises the same
+// connection and credential resolution.
 package forge
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
 
 // Config carries the resolved global settings a Client needs. cmd/forgectl
 // builds it from the parsed global flags, which keeps forge free of any CLI
@@ -32,30 +39,95 @@ func New(cfg Config) *Client {
 	return &Client{cfg: cfg}
 }
 
-// notImplemented reports that a handler is wired but its behavior is not written
-// yet. It names the platform from the Config so the wiring is visible.
-func (c *Client) notImplemented(cmd string) error {
-	return fmt.Errorf("%s: not implemented yet (source=%q)", cmd, c.cfg.Source)
+// platform abstracts the per-source (GitHub / GitLab) REST operations behind
+// the release and asset commands. Client builds the right implementation from
+// its Config; the command methods orchestrate platform calls and own the
+// cross-cutting concerns (output formatting, glob matching, local file I/O, and
+// the per-file success / failure tally on upload).
+type platform interface {
+	// listReleases returns every release, each with its commit resolved from
+	// the release's own tag (only release tags are resolved, one at a time).
+	listReleases() ([]release, error)
+
+	// createRelease publishes a release for version with the given note. commit
+	// names the commit a new tag points to (a SHA, or "latest" for the default
+	// branch's head); it is required only when the tag does not yet exist.
+	createRelease(version, note, commit string) error
+
+	// newUploader prepares the upload target for version — a get-or-created
+	// draft release on GitHub, a resolved project and package on GitLab — so
+	// several files reuse one preparation.
+	newUploader(version string) (uploader, error)
+
+	// findReleaseAssets resolves version ("latest" is allowed) to its assets,
+	// or returns an error when no such release exists.
+	findReleaseAssets(version string) ([]asset, error)
+
+	// download streams the asset's bytes to w.
+	download(a asset, w io.Writer) error
 }
 
-// ReleaseList implements: forgectl release list <repo> [--json]
-func (c *Client) ReleaseList(repo string, asJSON bool) error {
-	return c.notImplemented("release list")
+// uploader is a prepared upload target so several files reuse one preparation
+// (one get-or-create release on GitHub, one project / package resolution on
+// GitLab).
+type uploader interface {
+	// upload writes one local file as an asset, overwriting any same-name asset.
+	upload(file localAsset) error
 }
 
-// ReleaseCreate implements:
-// forgectl release create <repo> <version> (--note STR | --note-file PATH) [--commit COMMIT]
-func (c *Client) ReleaseCreate(repo, version, note, noteFile, commit string) error {
-	return c.notImplemented("release create")
+// platform resolves the connection and credentials for repo, emits the shared
+// warnings, and builds the source-specific platform implementation.
+func (c *Client) platform(repo string) (platform, error) {
+	base, err := apiBase(c.cfg.Source, c.cfg.Host)
+	if err != nil {
+		return nil, err
+	}
+	host, err := credentialHost(c.cfg.Source, c.cfg.Host)
+	if err != nil {
+		return nil, err
+	}
+	a, err := resolveAuth(c.cfg, host)
+	if err != nil {
+		return nil, err
+	}
+	emitWarnings(a, c.cfg.Insecure)
+
+	client := newHTTPClient(c.cfg.Insecure)
+	switch c.cfg.Source {
+	case "github":
+		owner, name, err := splitRepo(repo)
+		if err != nil {
+			return nil, err
+		}
+		return newGitHubPlatform(client, base, a.Token, owner, name), nil
+	case "gitlab":
+		return newGitLabPlatform(client, base, a.Token, repo)
+	default:
+		return nil, fmt.Errorf("unknown source %q", c.cfg.Source)
+	}
 }
 
-// AssetUpload implements: forgectl asset upload <repo> <version> <path>[=NAME]...
-func (c *Client) AssetUpload(repo, version string, paths []string) error {
-	return c.notImplemented("asset upload")
+// emitWarnings prints the shared stderr warnings a command shows before doing
+// work: any credential-file permission warning (collected during credential
+// resolution) and the --insecure notice. Ping prints the same set inline.
+func emitWarnings(a auth, insecure bool) {
+	for _, w := range a.Warnings {
+		fmt.Fprintln(os.Stderr, "warning: "+w)
+	}
+	if insecure {
+		fmt.Fprintln(os.Stderr, insecureWarning)
+	}
 }
 
-// AssetDownload implements:
-// forgectl asset download <repo> <version> [pattern]... [-d DIR] [-o NAME] [--overwrite]
-func (c *Client) AssetDownload(repo, version string, patterns []string, dir, output string, overwrite bool) error {
-	return c.notImplemented("asset download")
+// insecureWarning is the stderr notice shown whenever TLS verification is off.
+const insecureWarning = "warning: TLS certificate verification is disabled (--insecure); use only on trusted hosts"
+
+// splitRepo splits a GitHub "owner/repo" path into its two parts. GitLab paths
+// may contain subgroups and are handled by the GitLab platform instead.
+func splitRepo(repo string) (owner, name string, err error) {
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("repo must be an \"owner/repo\" path, got %q", repo)
+	}
+	return parts[0], parts[1], nil
 }

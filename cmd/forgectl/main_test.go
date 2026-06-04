@@ -1,7 +1,9 @@
 package main
 
 import (
-	"strings"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/alecthomas/kong"
@@ -165,25 +167,33 @@ func TestAssetDownloadOptionalPattern(t *testing.T) {
 }
 
 // TestRunDispatch checks the wiring from each command's Run through to forge:
-// every Run builds a client from the globals and reaches the matching handler,
-// which (until implemented) reports the source it was given.
+// every Run builds a client from the globals and reaches the matching handler.
+// It points the host at a closed address, so each handler errors only after it
+// has built the client and attempted real work (a refused connection, or — for
+// upload, which is reached the same way — the work that follows).
 func TestRunDispatch(t *testing.T) {
-	t.Parallel()
-	g := &Globals{Source: "github"}
+	// Isolate the credential search so the test reads no real file.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("AppData", t.TempDir())
+
+	// A server we immediately close: nothing listens on its address, so any
+	// network call is refused promptly.
+	srv := httptest.NewServer(http.NewServeMux())
+	dead := srv.URL
+	srv.Close()
+
+	g := &Globals{Source: "github", Host: dead, Token: "x"}
+	missing := filepath.Join(t.TempDir(), "nope.bin")
 	runs := map[string]func() error{
-		"release list":   func() error { return (&ReleaseListCmd{Repo: "r"}).Run(g) },
-		"release create": func() error { return (&ReleaseCreateCmd{Repo: "r", Version: "v1", Note: "n"}).Run(g) },
-		"asset upload":   func() error { return (&AssetUploadCmd{Repo: "r", Version: "v1", Paths: []string{"a"}}).Run(g) },
-		"asset download": func() error { return (&AssetDownloadCmd{Repo: "r", Version: "v1"}).Run(g) },
+		"release list":   func() error { return (&ReleaseListCmd{Repo: "o/r"}).Run(g) },
+		"release create": func() error { return (&ReleaseCreateCmd{Repo: "o/r", Version: "v1", Note: "n"}).Run(g) },
+		"asset upload":   func() error { return (&AssetUploadCmd{Repo: "o/r", Version: "v1", Paths: []string{missing}}).Run(g) },
+		"asset download": func() error { return (&AssetDownloadCmd{Repo: "o/r", Version: "v1"}).Run(g) },
 	}
 	for name, run := range runs {
-		err := run()
-		if err == nil {
-			t.Errorf("%s: expected not-implemented error", name)
-			continue
-		}
-		if !strings.Contains(err.Error(), `source="github"`) {
-			t.Errorf("%s: error should carry the source through to forge, got: %v", name, err)
+		if err := run(); err == nil {
+			t.Errorf("%s: expected an error against a closed host", name)
 		}
 	}
 }

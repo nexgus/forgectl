@@ -1,31 +1,64 @@
 package forge
 
 import (
-	"strings"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 )
 
-// TestClientCarriesSource proves the wiring: a Client built with a given source
-// reports that source from every handler. Because forge takes parameters and
-// reads no global, this test is free of shared state and runs in parallel.
-func TestClientCarriesSource(t *testing.T) {
-	t.Parallel()
-	c := New(Config{Source: "gitlab"})
+// TestClientDispatch proves the wiring: a Client built for a given source
+// reaches that platform's API shape (GitHub under /api/v3/repos, GitLab under
+// /api/v4/projects). It uses a local server so the test touches no network and
+// reads no real credential file.
+func TestClientDispatch(t *testing.T) {
+	isolateConfig(t)
 
-	calls := map[string]func() error{
-		"release list":   func() error { return c.ReleaseList("owner/repo", false) },
-		"release create": func() error { return c.ReleaseCreate("owner/repo", "v1", "note", "", "") },
-		"asset upload":   func() error { return c.AssetUpload("owner/repo", "v1", []string{"a.bin"}) },
-		"asset download": func() error { return c.AssetDownload("owner/repo", "v1", nil, "", "", false) },
-	}
-	for name, call := range calls {
-		err := call()
-		if err == nil {
-			t.Errorf("%s: expected not-implemented error", name)
-			continue
+	var (
+		mu  sync.Mutex
+		hit []string
+	)
+	record := func(p string) { mu.Lock(); hit = append(hit, p); mu.Unlock() }
+
+	// Route on the decoded path: GitLab encodes the project path as o%2Fr,
+	// which http.ServeMux would not match against a decoded pattern.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/o/r/releases": // GitHub
+			record("github")
+			io.WriteString(w, `[]`)
+		case "/api/v4/projects/o/r/releases": // GitLab
+			record("gitlab")
+			io.WriteString(w, `[]`)
+		default:
+			t.Errorf("unexpected request: %s", r.URL.Path)
 		}
-		if !strings.Contains(err.Error(), `source="gitlab"`) {
-			t.Errorf("%s: error should carry the source from Config, got: %v", name, err)
+	})
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	if err := New(Config{Source: "github", Host: srv.URL, Token: "x"}).ReleaseList("o/r", false); err != nil {
+		t.Fatalf("github ReleaseList: %v", err)
+	}
+	if err := New(Config{Source: "gitlab", Host: srv.URL, Token: "x"}).ReleaseList("o/r", false); err != nil {
+		t.Fatalf("gitlab ReleaseList: %v", err)
+	}
+
+	if len(hit) != 2 || hit[0] != "github" || hit[1] != "gitlab" {
+		t.Errorf("dispatch reached %v, want [github gitlab]", hit)
+	}
+}
+
+// TestSplitRepo pins the GitHub owner/repo parser.
+func TestSplitRepo(t *testing.T) {
+	t.Parallel()
+	if o, n, err := splitRepo("owner/repo"); err != nil || o != "owner" || n != "repo" {
+		t.Errorf("splitRepo(owner/repo) = (%q, %q, %v)", o, n, err)
+	}
+	for _, bad := range []string{"single", "a/b/c", "/r", "o/", ""} {
+		if _, _, err := splitRepo(bad); err == nil {
+			t.Errorf("splitRepo(%q) should error", bad)
 		}
 	}
 }

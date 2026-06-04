@@ -1,9 +1,14 @@
 # forgectl — 專案說明 (CLAUDE.md)
 
 `forgectl` 是一支 Go CLI, 透過 GitHub / GitLab 的 REST API 查詢與操作 repo 的 release
-與 asset. CLI 骨架 (kong 解析 + dispatch, 見 `cmd/forgectl`) 已建立; `ping` 指令已**完整
-實作** (含共用的連線與 credential 解析), 其餘 `release` / `asset` handler 仍為骨架 (回傳
-`notImplemented`). 設計文件在 `docs/`.
+與 asset. CLI 骨架 (kong 解析 + dispatch, 見 `cmd/forgectl`) 與全部指令皆已實作:
+`ping` (連線與 credential 解析), `release list` / `release create`, `asset upload` /
+`asset download`. 設計文件在 `docs/`.
+
+各指令的跨平台 REST 邏輯收在 `platform` 介面後 (`pkg/forge/forge.go`), 兩個實作分別在
+`github.go` / `gitlab.go`; 平台無關的編排 (輸出格式, glob 比對, 本地檔 I/O, 上傳的逐檔
+彙總) 在 `releases.go` / `assets.go`; 共用的 HTTP 與分頁工具在 `httpx.go`. HTTP 一律走
+標準庫 `net/http` (與 `ping` 一致, 不引入 resty).
 
 - `docs/cli.md` — CLI 語法與平台行為 (使用者導向; 只放語法與「在平台上做什麼」).
 - `docs/credential.md` — credential 檔格式 (TOML / YAML / JSON), 認證的單一事實來源.
