@@ -3,12 +3,14 @@
 `forgectl` 透過各程式碼託管平台的 REST API 查詢與操作儲存庫的 release 與
 asset. 目前規劃支援 **github**, **gitlab** 兩種 source.
 
-採 noun-verb 兩層結構, 目前有 `release` 與 `asset` 兩個 noun.
+採 noun-verb 兩層結構, 目前有 `release` 與 `asset` 兩個 noun; 另有一個獨立的診斷指令
+`ping` (無 noun-verb, 不接受 `<repo>`), 用來驗證連線與認證設定.
 
 ## 命令一覽
 
 ```
 # 全域旗標 (各指令通用): --source github|gitlab (必填), [--host URL], [--insecure], 認證旗標
+forgectl ping                                                 # 驗證設定 (連線 / TLS / 認證); 無 <repo>
 forgectl release list     <repo> [--json]
 forgectl release create   <repo> <version> (--note STR | --note-file PATH) [--commit COMMIT]
 forgectl asset   upload    <repo> <version> <path>[=NAME]...
@@ -18,6 +20,79 @@ forgectl asset   download  <repo> <version> [pattern]...      [-d DIR] [-o NAME]
 `<repo>` 只是 **owner/repo 路徑**; 平台與 host 由全域旗標 `--source` / `--host` 決定.
 每個指令的完整說明見下方各章節; `<repo>` 寫法, 認證, 跨平台行為等共用主題集中在後段
 的 "共用主題".
+
+---
+
+# ping
+
+驗證與遠端有關的設定是否正確: 解析連線目標與認證後, 做**分層檢查** — 先測連線 (含 TLS),
+再測認證. `ping` 不接受 `<repo>`, 只驗證連線與認證本身, 與特定 repo 無關.
+
+## 語法
+
+```
+forgectl ping
+```
+
+全域旗標: `--source` (必填), 另有 `--host` / `--insecure` 與認證旗標 (`--token` /
+`--token-file` / `--user`); 見共用主題. `ping` 沒有自己的位置參數, 全部行為由全域旗標決定.
+
+## 示範
+
+```
+# 以 credential 檔的認證測試公開 GitHub
+forgectl ping --source github
+
+# 測試自架 GitLab: token 從檔讀, host 使用自簽憑證
+forgectl ping --source gitlab --host https://tech-git.nexcom.com.tw --token-file ~/.gl-token --insecure
+```
+
+## 注意事項
+
+- **分層檢查, 依序兩層**:
+  1. **連線**: 對 api_base 發一個不需 token 的請求 (GitHub: API root; GitLab: `/version`).
+     只要取得 HTTP 回應 (即使是錯誤狀態碼) 即視為連線成功 — 這驗證 `--host`, `--insecure`
+     與 TLS, **即使沒有任何認證也能測**. 傳輸層失敗 (DNS, 連線被拒, 憑證驗證失敗) 即連線失敗.
+  2. **認證**: 解析到 token 時, 對該平台的 current-user 端點 (`/user`) 發認證請求, 確認
+     token 並回報認證身分 (GitHub login / GitLab username). **未解析到 token 時略過此層**
+     (匿名亦為合法用法).
+- **只印 token 來源, 絕不印 token 本體**: 輸出先列出解析到的設定 (source / host / api_base /
+  TLS 驗證 / token 來源 / user), 再列出各層結果.
+- 認證帶法依平台 (見 §認證): GitHub 用 `Authorization: Bearer`; GitLab 用 `PRIVATE-TOKEN`.
+- **GitLab deploy token 的限制**: deploy token 無法存取 `/user` (僅能用於 package
+  registry), `ping` 會將其回報為認證失敗. 要驗證 deploy token, 請改以實際的 asset 操作測試.
+- **退出碼**: 連線通過, 且 (有 token 時) 認證也通過 → 0; 連線失敗, 或 token 無效 / 過期 /
+  權限不足 → 非 0. **無認證 (匿名) 但連線成功仍為 0**.
+- credential 檔若可被其他使用者讀取, 印一行警告至 stderr (建議 `chmod 600`); `--insecure`
+  亦印一行警告至 stderr.
+
+## 輸出格式
+
+```
+# 公開 GitHub, 匿名 (無認證): 連線成功, 認證略過
+Source:       github
+Host:         github.com (public)
+API base:     https://api.github.com
+TLS verify:   on
+Token:        none
+User:         none
+
+Connectivity: OK
+Auth:         skipped (no credentials resolved)
+```
+
+```
+# 自架 GitLab, 帶 token: 連線與認證皆成功, 回報身分
+Source:       gitlab
+Host:         tech-git.nexcom.com.tw (self-hosted)
+API base:     https://tech-git.nexcom.com.tw/api/v4
+TLS verify:   on
+Token:        credential file (~/.config/forgectl/credential.toml)
+User:         none
+
+Connectivity: OK
+Auth:         OK - authenticated as "augustus" (id 42)
+```
 
 ---
 
@@ -320,7 +395,7 @@ credential 檔的**格式, 搜尋位置, 欄位, 解析優先序, 安全性**見
 
 `--insecure`: **跳過 TLS 憑證驗證** (等同 curl `-k`), 供自架 host 使用自簽憑證的情況.
 
-- **全域選項**, 各指令皆可用 (release list / create, asset upload / download); 僅對
+- **全域選項**, 各指令皆可用 (ping, release list / create, asset upload / download); 僅對
   https 連線有意義.
 - 公開的 github.com / gitlab.com 有正式憑證, **不需也不應**使用.
 - 會關閉**所有** TLS 驗證 (憑證鏈與主機名), 有中間人風險, 請只對信任的內網 host 使用;

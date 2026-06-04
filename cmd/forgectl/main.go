@@ -47,8 +47,19 @@ func (g *Globals) client() *forge.Client {
 type CLI struct {
 	Globals
 
+	Ping    PingCmd    `cmd:"" help:"Verify the remote settings (host, TLS, and credentials) are correct."`
 	Release ReleaseCmd `cmd:"" help:"Query and manage releases."`
 	Asset   AssetCmd   `cmd:"" help:"Upload and download assets."`
+}
+
+// PingCmd implements: forgectl ping
+//
+// It takes no positional arguments: ping validates the connection and
+// credentials (the global flags), not a specific repository.
+type PingCmd struct{}
+
+func (c *PingCmd) Run(g *Globals) error {
+	return g.client().Ping()
 }
 
 // ReleaseCmd groups the "release" subcommands.

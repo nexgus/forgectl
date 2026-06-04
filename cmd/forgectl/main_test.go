@@ -40,6 +40,37 @@ func TestReleaseList(t *testing.T) {
 	}
 }
 
+// TestPing pins the ping grammar: it carries the global flags and takes no
+// positional arguments.
+func TestPing(t *testing.T) {
+	t.Parallel()
+	t.Run("flags", func(t *testing.T) {
+		t.Parallel()
+		c, ctx, err := parse(t, "--source", "gitlab", "--host", "https://gitlab.example.com", "--insecure", "ping")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if c.Source != "gitlab" {
+			t.Errorf("Source = %q, want gitlab", c.Source)
+		}
+		if c.Host != "https://gitlab.example.com" {
+			t.Errorf("Host = %q, want https://gitlab.example.com", c.Host)
+		}
+		if !c.Insecure {
+			t.Error("Insecure = false, want true")
+		}
+		if got := ctx.Command(); got != "ping" {
+			t.Errorf("Command() = %q, want %q", got, "ping")
+		}
+	})
+	t.Run("rejects positional arg", func(t *testing.T) {
+		t.Parallel()
+		if _, _, err := parse(t, "--source", "github", "ping", "owner/repo"); err == nil {
+			t.Error("ping with a positional argument should error")
+		}
+	})
+}
+
 func TestSourceValidation(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

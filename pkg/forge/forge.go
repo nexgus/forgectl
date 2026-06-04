@@ -3,7 +3,9 @@
 // settings through New, per-command inputs through each method — so it depends
 // on no CLI types and can be tested in isolation.
 //
-// The handlers are not implemented yet; this is the wiring skeleton.
+// Ping is implemented (see ping.go), along with the shared connection and
+// credential resolution it needs (endpoint.go, credential.go). The release and
+// asset handlers are still the wiring skeleton and report notImplemented.
 package forge
 
 import "fmt"

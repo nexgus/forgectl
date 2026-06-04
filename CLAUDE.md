@@ -1,7 +1,9 @@
 # forgectl — 專案說明 (CLAUDE.md)
 
 `forgectl` 是一支 Go CLI, 透過 GitHub / GitLab 的 REST API 查詢與操作 repo 的 release
-與 asset. 目前處於**設計階段**, 尚無程式碼; 設計文件在 `docs/`.
+與 asset. CLI 骨架 (kong 解析 + dispatch, 見 `cmd/forgectl`) 已建立; `ping` 指令已**完整
+實作** (含共用的連線與 credential 解析), 其餘 `release` / `asset` handler 仍為骨架 (回傳
+`notImplemented`). 設計文件在 `docs/`.
 
 - `docs/cli.md` — CLI 語法與平台行為 (使用者導向; 只放語法與「在平台上做什麼」).
 - `docs/credential.md` — credential 檔格式 (TOML / YAML / JSON), 認證的單一事實來源.
@@ -79,6 +81,27 @@ Enterprise) 才是 `{host}/api/v3`.
 - **不顯示 sibling tags** (指向同一 commit 的其他 tag): 需先抓全部 tag 才算得出, 與
   「只解析有 release 的 tag」衝突, 故捨棄.
 
-## 待決的實作決策
+## ping (設定驗證)
 
-- 解析 TOML / YAML / JSON 的相依套件選擇 (實作時定).
+`ping` 是第一個完整實作的指令, 順帶把各指令共用的基礎建設先做起來:
+`pkg/forge/endpoint.go` (api_base / credential host 推導), `pkg/forge/credential.go`
+(credential 檔搜尋 / 解析 / 旗標覆寫優先序), `pkg/forge/ping.go` (HTTP 與分層檢查).
+
+- **分層檢查**: (1) 連線 — 對 api_base 發**不需 token** 的請求 (GitHub: API root; GitLab:
+  `/version`), 取得任何 HTTP 回應 (即使錯誤狀態碼) 即算連線成功, 只有傳輸層錯誤 (含 TLS
+  憑證) 才算失敗; 故沒 token 也能驗證 `--host` / `--insecure` / TLS. (2) 認證 — 有 token 時
+  打 `/user` 回報身分; 無 token 略過 (匿名為合法用法).
+- **認證 header**: GitHub `Authorization: Bearer` (另帶 `X-GitHub-Api-Version`); GitLab
+  `PRIVATE-TOKEN`. 身分欄位: GitHub `login`, GitLab `username`.
+- **GitLab deploy token 的限制**: deploy token 無法存取 `/user`, 故 `ping` 對它一律回報
+  401 認證失敗 (已選擇此分層做法, 而非繞過 `/user`); 文件註明改以實際 asset 操作驗證.
+- **不印 token 本體**: 只印 token 來源 (`--token` / `--token-file` / credential 檔路徑 / none),
+  避免祕密外洩到終端機或日誌.
+- credential 檔權限可被他人讀取時印警告至 stderr; `--insecure` 亦印警告.
+
+## 實作決策
+
+- **credential 檔解析套件** (隨 `ping` 實作確定): TOML = `github.com/BurntSushi/toml`,
+  YAML = `gopkg.in/yaml.v3`, JSON = 標準庫 `encoding/json`. 解析時一律先 unmarshal 進
+  `map[string]any`, 再判定扁平 / 階層 (頂層出現 map 值 = 階層, 出現 `token` / `user` 字串
+  = 扁平, 兩者並存即報錯); 見 `pkg/forge/credential.go`.
