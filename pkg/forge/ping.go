@@ -9,23 +9,18 @@ import (
 	"time"
 )
 
-// pingTimeout bounds each HTTP request that ping makes.
+// pingTimeout 限制 ping 發出的每個 HTTP 請求的逾時時間.
 const pingTimeout = 30 * time.Second
 
-// Ping verifies the remote settings. It resolves the connection target and
-// credentials, then runs a layered check:
+// Ping 驗證遠端設定. 解析連線目標與 credential 後, 執行分層檢查:
 //
-//  1. Connectivity: a request that needs no token, so it validates --host,
-//     --insecure, and TLS even when no credentials are present. Any HTTP
-//     response (even an error status) proves the API was reached; only a
-//     transport-level failure counts as a connectivity failure.
-//  2. Authentication: when a token is resolved, a request to the platform's
-//     current-user endpoint, which confirms the token and reports the
-//     authenticated identity. Skipped when no token is resolved (anonymous use
-//     is valid).
+//  1. 連線: 發出不需 token 的請求, 以驗證 --host, --insecure 及 TLS,
+//     即使沒有 credential 也能執行. 只要收到任何 HTTP 回應 (即使是錯誤狀態碼)
+//     即視為連線成功; 只有傳輸層錯誤才算連線失敗.
+//  2. 認證: 若已解析到 token, 呼叫平台的目前使用者 endpoint, 確認 token 有效
+//     並回報已認證的身分. 無 token 時略過此層 (匿名為合法用法).
 //
-// The resolved settings and each layer's result are printed to stdout; Ping
-// returns an error (non-zero exit) when a layer fails.
+// 已解析的設定與每層結果會印至 stdout; 任何一層失敗時 Ping 回傳 error (非零結束碼).
 func (c *Client) Ping() error {
 	base, err := apiBase(c.cfg.Source, c.cfg.Host)
 	if err != nil {
@@ -51,16 +46,16 @@ func (c *Client) Ping() error {
 		}
 	}
 
-	// Layer 1: connectivity.
+	// 第一層: 連線.
 	connURL := base + connectivityPath(c.cfg.Source)
 	resp, err := doGet(client, connURL, nil)
 	if err != nil {
-		return fmt.Errorf("connectivity check failed for %s: %w", connURL, err)
+		return fmt.Errorf("連線檢查失敗 (%s): %w", connURL, err)
 	}
 	resp.Body.Close()
 	fmt.Println("Connectivity: OK")
 
-	// Layer 2: authentication.
+	// 第二層: 認證.
 	if a.Token == "" {
 		fmt.Println("Auth:         skipped (no credentials resolved)")
 		return nil
@@ -73,8 +68,7 @@ func (c *Client) Ping() error {
 	return nil
 }
 
-// printSettings writes the resolved connection settings to stdout. It prints
-// where the token and user came from but never the token value itself.
+// printSettings 將已解析的連線設定寫至 stdout. 只印 token 來源, 不印 token 本體.
 func (c *Client) printSettings(base, host string, a auth) {
 	site := "public"
 	if c.cfg.Host != "" {
@@ -98,21 +92,19 @@ func (c *Client) printSettings(base, host string, a auth) {
 	fmt.Println()
 }
 
-// connectivityPath is the path appended to the API base for the connectivity
-// probe: a no-auth endpoint on each platform.
+// connectivityPath 回傳附加在 API base 後的連線探測路徑: 各平台上不需認證的 endpoint.
 func connectivityPath(source string) string {
 	switch source {
 	case "gitlab":
 		return "/version"
-	default: // github: the API root responds without authentication
+	default: // github: API root 不需認證即可回應
 		return ""
 	}
 }
 
-// checkAuth calls the platform's current-user endpoint with the token and
-// returns a human-readable identity on success. A non-2xx response means the
-// credentials are not valid for this endpoint; on GitLab this includes deploy
-// tokens, which cannot access /user.
+// checkAuth 以 token 呼叫平台的目前使用者 endpoint, 成功時回傳可讀的身分字串.
+// 非 2xx 回應代表 credential 不適用於此 endpoint; 在 GitLab 上包括 deploy token,
+// 因為 deploy token 無法存取 /user.
 func (c *Client) checkAuth(client *http.Client, base, token string) (string, error) {
 	url := base + "/user"
 	var headers map[string]string
@@ -129,7 +121,7 @@ func (c *Client) checkAuth(client *http.Client, base, token string) (string, err
 
 	resp, err := doGet(client, url, headers)
 	if err != nil {
-		return "", fmt.Errorf("authentication check failed for %s: %w", url, err)
+		return "", fmt.Errorf("認證檢查失敗 (%s): %w", url, err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -139,24 +131,23 @@ func (c *Client) checkAuth(client *http.Client, base, token string) (string, err
 	return parseIdentity(c.cfg.Source, body)
 }
 
-// authError turns a non-2xx status from the current-user endpoint into an
-// actionable error.
+// authError 將目前使用者 endpoint 的非 2xx 狀態碼轉換為可採取行動的 error.
 func (c *Client) authError(status int) error {
 	switch status {
 	case http.StatusUnauthorized:
 		if c.cfg.Source == "gitlab" {
-			return fmt.Errorf("authentication failed: 401 Unauthorized; the token is invalid or expired, or it is a deploy token (deploy tokens cannot access /user - validate them with a real asset operation)")
+			return fmt.Errorf("認證失敗: 401 Unauthorized; token 無效或已過期, 或為 deploy token (deploy token 無法存取 /user, 請改以實際 asset 操作驗證)")
 		}
-		return fmt.Errorf("authentication failed: 401 Unauthorized; the token is invalid or expired")
+		return fmt.Errorf("認證失敗: 401 Unauthorized; token 無效或已過期")
 	case http.StatusForbidden:
-		return fmt.Errorf("authentication failed: 403 Forbidden; the token lacks the required scope, or the request was rate-limited")
+		return fmt.Errorf("認證失敗: 403 Forbidden; token 缺少所需權限範圍, 或請求遭到速率限制")
 	default:
-		return fmt.Errorf("authentication failed: unexpected status %d from /user", status)
+		return fmt.Errorf("認證失敗: /user 回傳非預期狀態碼 %d", status)
 	}
 }
 
-// parseIdentity extracts the authenticated identity from a current-user
-// response body: the login on GitHub, the username on GitLab.
+// parseIdentity 從目前使用者 endpoint 的回應主體中擷取已認證的身分:
+// GitHub 使用 login 欄位, GitLab 使用 username 欄位.
 func parseIdentity(source string, body []byte) (string, error) {
 	switch source {
 	case "github":
@@ -165,7 +156,7 @@ func parseIdentity(source string, body []byte) (string, error) {
 			ID    int64  `json:"id"`
 		}
 		if err := json.Unmarshal(body, &u); err != nil || u.Login == "" {
-			return "", fmt.Errorf("authentication succeeded but the user response could not be parsed")
+			return "", fmt.Errorf("認證成功, 但無法解析使用者回應")
 		}
 		return fmt.Sprintf("%q (id %d)", u.Login, u.ID), nil
 	case "gitlab":
@@ -174,7 +165,7 @@ func parseIdentity(source string, body []byte) (string, error) {
 			ID       int64  `json:"id"`
 		}
 		if err := json.Unmarshal(body, &u); err != nil || u.Username == "" {
-			return "", fmt.Errorf("authentication succeeded but the user response could not be parsed")
+			return "", fmt.Errorf("認證成功, 但無法解析使用者回應")
 		}
 		return fmt.Sprintf("%q (id %d)", u.Username, u.ID), nil
 	default:
@@ -182,8 +173,7 @@ func parseIdentity(source string, body []byte) (string, error) {
 	}
 }
 
-// doGet issues a GET with the given headers and returns the response, whose
-// body the caller must close.
+// doGet 以指定的 headers 發出 GET 請求並回傳回應, 呼叫端須自行關閉回應主體.
 func doGet(client *http.Client, url string, headers map[string]string) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {

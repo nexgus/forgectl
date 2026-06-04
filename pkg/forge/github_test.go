@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// decodeBody reads a request's JSON body into a map for assertions.
+// decodeBody 將 request 的 JSON body 讀入 map, 供斷言使用.
 func decodeBody(t *testing.T, r *http.Request) map[string]any {
 	t.Helper()
 	var m map[string]any
@@ -23,8 +23,8 @@ func decodeBody(t *testing.T, r *http.Request) map[string]any {
 	return m
 }
 
-// ghServer builds a GitHub-shaped test server and a platform pointed at it. The
-// base mirrors a self-hosted instance (apiBase appends /api/v3).
+// ghServer 建立一個形狀如 GitHub 的測試伺服器, 並回傳指向它的 platform.
+// base 模擬自架實例 (apiBase 附加 /api/v3).
 func ghServer(t *testing.T, mux *http.ServeMux) *githubPlatform {
 	t.Helper()
 	srv := httptest.NewServer(mux)
@@ -69,7 +69,7 @@ func TestGitHubCreateReleaseNew(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/repos/o/r/releases", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			io.WriteString(w, `[]`) // no existing release
+			io.WriteString(w, `[]`) // 無既有 release
 			return
 		}
 		posted = decodeBody(t, r)
@@ -77,7 +77,7 @@ func TestGitHubCreateReleaseNew(t *testing.T) {
 		io.WriteString(w, `{"id":1}`)
 	})
 	mux.HandleFunc("/api/v3/repos/o/r/git/ref/tags/v1.2.3", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"ref":"refs/tags/v1.2.3"}`) // tag exists
+		io.WriteString(w, `{"ref":"refs/tags/v1.2.3"}`) // tag 已存在
 	})
 	g := ghServer(t, mux)
 
@@ -101,7 +101,7 @@ func TestGitHubCreateReleaseAlreadyPublished(t *testing.T) {
 	g := ghServer(t, mux)
 
 	err := g.createRelease("v1.2.3", "note", "")
-	if err == nil || !strings.Contains(err.Error(), "already exists") {
+	if err == nil || !strings.Contains(err.Error(), "已存在") {
 		t.Errorf("createRelease over a published release: err = %v, want 'already exists'", err)
 	}
 }
@@ -131,7 +131,7 @@ func TestGitHubCreateReleasePublishDraft(t *testing.T) {
 		io.WriteString(w, `[{"id":42,"tag_name":"v1","draft":true}]`)
 	})
 	mux.HandleFunc("/api/v3/repos/o/r/git/ref/tags/v1", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"ref":"refs/tags/v1"}`) // tag exists
+		io.WriteString(w, `{"ref":"refs/tags/v1"}`) // tag 已存在
 	})
 	mux.HandleFunc("/api/v3/repos/o/r/releases/42", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPatch {
@@ -150,8 +150,7 @@ func TestGitHubCreateReleasePublishDraft(t *testing.T) {
 	}
 }
 
-// TestGitHubUploadOverwrite proves the delete-then-upload order: a same-name
-// asset is removed before the new upload.
+// TestGitHubUploadOverwrite 驗證先刪後上傳的順序: 同名 asset 在新上傳前必須先被刪除.
 func TestGitHubUploadOverwrite(t *testing.T) {
 	t.Parallel()
 	var (
@@ -162,12 +161,12 @@ func TestGitHubUploadOverwrite(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v3/repos/o/r/releases", func(w http.ResponseWriter, r *http.Request) {
-		// findReleaseByTag: a draft already staging assets.
+		// findReleaseByTag: 一個已暫存 asset 的 draft.
 		io.WriteString(w, `[{"id":7,"tag_name":"v1","draft":true,
 			"upload_url":"`+uploadsBase(r)+`/uploads/repos/o/r/releases/7/assets{?name,label}"}]`)
 	})
 	mux.HandleFunc("/api/v3/repos/o/r/releases/7/assets", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `[{"id":99,"name":"app"}]`) // existing same-name asset
+		io.WriteString(w, `[{"id":99,"name":"app"}]`) // 既有的同名 asset
 	})
 	mux.HandleFunc("/api/v3/repos/o/r/releases/assets/99", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
@@ -234,13 +233,12 @@ func TestGitHubDownloadReleaseNotFound(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 	g := ghServer(t, mux)
-	if _, err := g.findReleaseAssets("v9"); err == nil || !strings.Contains(err.Error(), "not found") {
+	if _, err := g.findReleaseAssets("v9"); err == nil || !strings.Contains(err.Error(), "不存在") {
 		t.Errorf("err = %v, want 'not found'", err)
 	}
 }
 
-// uploadsBase returns the scheme://host of the test request, so the synthetic
-// upload_url points back at the same test server.
+// uploadsBase 回傳測試 request 的 scheme://host, 使合成的 upload_url 指回同一個測試伺服器.
 func uploadsBase(r *http.Request) string {
 	return "http://" + r.Host
 }

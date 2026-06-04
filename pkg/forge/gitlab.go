@@ -13,26 +13,26 @@ import (
 
 const gitlabPerPage = 100
 
-// gitlabPlatform implements platform against the GitLab REST API. Assets are
-// generic package files plus, once a release exists, asset links that point at
-// the stable by-name download URL (CLAUDE.md). The project id is the
-// URL-encoded "namespace/project" path, so no lookup by name is needed.
+// gitlabPlatform 實作 platform 介面, 透過 GitLab REST API 操作. asset 是
+// generic package file; 一旦 release 存在, 便建立 asset link 指向穩定的 by-name
+// 下載 URL (見 CLAUDE.md). project id 為 URL-encoded 的 "namespace/project" 路徑,
+// 無需依名稱查詢.
 type gitlabPlatform struct {
 	apiCaller
-	base    string // already includes /api/v4
-	project string // URL-encoded project path, used as the :id path segment
-	pkgName string // generic package name = the project's final path segment
+	base    string // 已包含 /api/v4
+	project string // URL-encoded 的 project 路徑, 作為 :id 路徑片段
+	pkgName string // generic package name = project 路徑的最後一段
 }
 
 func newGitLabPlatform(client *http.Client, base, token, repo string) (*gitlabPlatform, error) {
 	repo = strings.Trim(repo, "/")
 	parts := strings.Split(repo, "/")
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("repo must be a \"namespace/project\" path, got %q", repo)
+		return nil, fmt.Errorf("repo 必須為 \"namespace/project\" 格式, 實際為 %q", repo)
 	}
 	for _, p := range parts {
 		if p == "" {
-			return nil, fmt.Errorf("repo must be a \"namespace/project\" path, got %q", repo)
+			return nil, fmt.Errorf("repo 必須為 \"namespace/project\" 格式, 實際為 %q", repo)
 		}
 	}
 	headers := map[string]string{}
@@ -47,9 +47,8 @@ func newGitLabPlatform(client *http.Client, base, token, repo string) (*gitlabPl
 	}, nil
 }
 
-// glRelease / glLink mirror the GitLab REST responses, with only the fields the
-// commands use. Source archives live in assets.sources (excluded); only
-// assets.links are user assets.
+// glRelease / glLink 對應 GitLab REST 回應, 僅保留指令所需的欄位.
+// 原始碼壓縮檔位於 assets.sources (已排除); 使用者 asset 僅取 assets.links.
 type glRelease struct {
 	Name     string `json:"name"`
 	TagName  string `json:"tag_name"`
@@ -97,8 +96,8 @@ func (g *gitlabPlatform) listReleases() ([]release, error) {
 	return out, nil
 }
 
-// linkAssets converts a release's asset links to the normalized form. GitLab
-// reports no size for links, so Size stays nil (docs/cli.md).
+// linkAssets 將 release 的 asset link 轉換為正規化格式. GitLab 不回報 link 的大小,
+// 因此 Size 維持 nil (見 docs/cli.md).
 func (g *gitlabPlatform) linkAssets(links []glLink) []asset {
 	out := make([]asset, 0, len(links))
 	for _, l := range links {
@@ -111,9 +110,8 @@ func (g *gitlabPlatform) linkAssets(links []glLink) []asset {
 	return out
 }
 
-// tagCommit resolves a tag to its commit SHA. GitLab embeds a commit in the
-// release object, but CLAUDE.md requires resolving the tag so both platforms
-// behave identically. An unresolvable tag yields "".
+// tagCommit 將 tag 解析為對應的 commit SHA. GitLab 雖在 release 物件中附帶 commit,
+// 但 CLAUDE.md 要求透過解析 tag 取得, 以確保兩平台行為一致. 無法解析的 tag 回傳 "".
 func (g *gitlabPlatform) tagCommit(tag string) string {
 	if tag == "" {
 		return ""
@@ -139,7 +137,7 @@ func (g *gitlabPlatform) createRelease(version, note, commit string) error {
 		return err
 	}
 	if exists {
-		return fmt.Errorf("release %s already exists; not overwriting", version)
+		return fmt.Errorf("release %s 已存在, 不覆寫", version)
 	}
 
 	tagExists, err := g.tagExists(version)
@@ -154,19 +152,18 @@ func (g *gitlabPlatform) createRelease(version, note, commit string) error {
 		}
 		payload["ref"] = ref
 	}
-	if err := g.sendJSON("POST", g.projectURL("/releases"), payload, "creating release "+version); err != nil {
+	if err := g.sendJSON("POST", g.projectURL("/releases"), payload, "建立 release "+version); err != nil {
 		return err
 	}
-	// Backfill asset links for the version's already-uploaded package files
-	// (CLAUDE.md).
+	// 補建 asset link, 對應此 version 已上傳的 package file (見 CLAUDE.md).
 	return g.linkPackageFiles(version)
 }
 
-// ref decides the ref a new tag points to: a SHA, or the default branch for
-// "latest". --commit is required when the tag does not yet exist.
+// ref 決定新 tag 所指向的 ref: 可為 SHA, 或 "latest" 對應的預設分支.
+// 當 tag 尚不存在時, 必須提供 --commit.
 func (g *gitlabPlatform) ref(commit, version string) (string, error) {
 	if commit == "" {
-		return "", fmt.Errorf("tag %s does not exist; specify --commit (a commit SHA or 'latest')", version)
+		return "", fmt.Errorf("tag %s 不存在, 請透過 --commit 指定 commit SHA 或 'latest'", version)
 	}
 	if commit == "latest" {
 		return g.defaultBranch()
@@ -174,17 +171,17 @@ func (g *gitlabPlatform) ref(commit, version string) (string, error) {
 	return commit, nil
 }
 
-// releaseExists reports whether a Release exists for the tag.
+// releaseExists 回報指定 tag 是否已有對應的 release.
 func (g *gitlabPlatform) releaseExists(version string) (bool, error) {
-	return g.exists(g.projectURL("/releases/%s", url.PathEscape(version)), "checking release "+version)
+	return g.exists(g.projectURL("/releases/%s", url.PathEscape(version)), "查詢 release "+version)
 }
 
-// tagExists reports whether the git tag exists in the repository.
+// tagExists 回報指定的 git tag 是否存在於 repository 中.
 func (g *gitlabPlatform) tagExists(tag string) (bool, error) {
-	return g.exists(g.projectURL("/repository/tags/%s", url.PathEscape(tag)), "checking tag "+tag)
+	return g.exists(g.projectURL("/repository/tags/%s", url.PathEscape(tag)), "查詢 tag "+tag)
 }
 
-// exists performs a GET that distinguishes 200 (exists) from 404 (absent).
+// exists 發送 GET 請求, 區分 200 (存在) 與 404 (不存在) 兩種情況.
 func (g *gitlabPlatform) exists(url, action string) (bool, error) {
 	status, body, err := g.req("GET", url, nil, nil)
 	if err != nil {
@@ -200,8 +197,7 @@ func (g *gitlabPlatform) exists(url, action string) (bool, error) {
 	}
 }
 
-// defaultBranch returns the project's default branch, used to resolve --commit
-// latest.
+// defaultBranch 回傳專案的預設分支, 用於解析 --commit latest.
 func (g *gitlabPlatform) defaultBranch() (string, error) {
 	var p struct {
 		DefaultBranch string `json:"default_branch"`
@@ -210,12 +206,12 @@ func (g *gitlabPlatform) defaultBranch() (string, error) {
 		return "", err
 	}
 	if p.DefaultBranch == "" {
-		return "", fmt.Errorf("could not determine the default branch")
+		return "", fmt.Errorf("無法取得預設分支")
 	}
 	return p.DefaultBranch, nil
 }
 
-// glPackage / glPackageFile mirror the package registry responses.
+// glPackage / glPackageFile 對應 package registry 的回應結構.
 type glPackage struct {
 	ID      int64  `json:"id"`
 	Name    string `json:"name"`
@@ -228,8 +224,8 @@ type glPackageFile struct {
 	FileName string `json:"file_name"`
 }
 
-// findPackage returns the id of the generic package for this project and
-// version, or 0 if none exists yet.
+// findPackage 回傳此專案與 version 對應的 generic package id,
+// 若尚不存在則回傳 0.
 func (g *gitlabPlatform) findPackage(version string) (int64, error) {
 	var id int64
 	err := paginate(gitlabPerPage, func(page int) (int, error) {
@@ -241,7 +237,7 @@ func (g *gitlabPlatform) findPackage(version string) (int64, error) {
 		for _, p := range batch {
 			if p.Name == g.pkgName && p.Version == version {
 				id = p.ID
-				return 0, nil // stop paging: target found
+				return 0, nil // 找到目標, 停止分頁
 			}
 		}
 		return len(batch), nil
@@ -249,7 +245,7 @@ func (g *gitlabPlatform) findPackage(version string) (int64, error) {
 	return id, err
 }
 
-// packageFiles lists the files of a package.
+// packageFiles 列出指定 package 的所有檔案.
 func (g *gitlabPlatform) packageFiles(pkgID int64) ([]glPackageFile, error) {
 	var files []glPackageFile
 	if err := g.getJSON(g.projectURL("/packages/%d/package_files", pkgID), &files); err != nil {
@@ -258,16 +254,16 @@ func (g *gitlabPlatform) packageFiles(pkgID int64) ([]glPackageFile, error) {
 	return files, nil
 }
 
-// linkPackageFiles links every generic package file of version to the release
-// as an asset link pointing at the stable by-name download URL. delete-then-
-// upload keeps one file per name, so the link set is unambiguous (CLAUDE.md).
+// linkPackageFiles 將指定 version 的每個 generic package file 連結至 release,
+// 建立 asset link 指向穩定的 by-name 下載 URL. 先刪後傳確保每個檔名只有一份,
+// 因此 link 集合不會有歧義 (見 CLAUDE.md).
 func (g *gitlabPlatform) linkPackageFiles(version string) error {
 	pkgID, err := g.findPackage(version)
 	if err != nil {
 		return err
 	}
 	if pkgID == 0 {
-		return nil // no uploaded assets for this version
+		return nil // 此 version 尚無已上傳的 asset
 	}
 	files, err := g.packageFiles(pkgID)
 	if err != nil {
@@ -286,8 +282,8 @@ func (g *gitlabPlatform) linkPackageFiles(version string) error {
 	return nil
 }
 
-// createLink adds an asset link to the release, ignoring a name that already
-// exists so that upload-time and create-time linking converge on one set.
+// createLink 在 release 中新增 asset link, 若同名 link 已存在則略過,
+// 使上傳時與 release create 時的 link 最終匯聚為同一組.
 func (g *gitlabPlatform) createLink(version, name string) error {
 	payload := map[string]any{"name": name, "url": g.byNameURL(version, name)}
 	data, _ := json.Marshal(payload)
@@ -299,15 +295,15 @@ func (g *gitlabPlatform) createLink(version, name string) error {
 	if ok2xx(status) {
 		return nil
 	}
-	// A link with this name is already present: leave it as-is.
+	// 同名 link 已存在, 維持原狀不修改.
 	if status == http.StatusBadRequest && strings.Contains(strings.ToLower(string(body)), "already") {
 		return nil
 	}
-	return statusError("linking asset "+name, status, body)
+	return statusError("連結 asset "+name, status, body)
 }
 
-// byNameURL is the stable by-name generic-package download URL for a file. It
-// is the link target and the upload destination, so they always agree.
+// byNameURL 回傳檔案的穩定 by-name generic package 下載 URL.
+// 此 URL 同時作為 link 目標與上傳目的地, 確保兩者始終一致.
 func (g *gitlabPlatform) byNameURL(version, name string) string {
 	return g.projectURL("/packages/generic/%s/%s/%s",
 		url.PathEscape(g.pkgName), url.PathEscape(version), url.PathEscape(name))
@@ -321,8 +317,8 @@ func (g *gitlabPlatform) newUploader(version string) (uploader, error) {
 	return &gitlabUploader{g: g, version: version, hasRelease: hasRelease}, nil
 }
 
-// gitlabUploader uploads files for one version, remembering whether the release
-// already exists so it can attach links as it goes.
+// gitlabUploader 負責上傳單一 version 的檔案, 並記錄 release 是否已存在,
+// 以便在上傳時即時建立 asset link.
 type gitlabUploader struct {
 	g          *gitlabPlatform
 	version    string
@@ -334,8 +330,8 @@ func (u *gitlabUploader) upload(file localAsset) error {
 	if err != nil {
 		return err
 	}
-	// Deterministic overwrite: delete any same-name package file first, then
-	// upload, so the registry never holds duplicates (CLAUDE.md).
+	// 先刪後傳以確保覆蓋的確定性: 先刪除同名 package file, 再上傳,
+	// 使 registry 不留重複檔案 (見 CLAUDE.md).
 	if err := u.g.deletePackageFile(u.version, file.name); err != nil {
 		return err
 	}
@@ -345,19 +341,17 @@ func (u *gitlabUploader) upload(file localAsset) error {
 		return err
 	}
 	if !ok2xx(status) {
-		return statusError("uploading "+file.name, status, body)
+		return statusError("上傳 "+file.name, status, body)
 	}
-	// If the release already exists, attach a by-name link now; otherwise
-	// release create backfills it later.
+	// 若 release 已存在, 立即建立 by-name link; 否則由 release create 事後補建.
 	if u.hasRelease {
 		return u.g.createLink(u.version, file.name)
 	}
 	return nil
 }
 
-// deletePackageFile removes every package file named name in the version's
-// generic package (none on the first upload). Deleting requires higher
-// privilege; a 403 surfaces as an error (CLAUDE.md).
+// deletePackageFile 刪除指定 version 的 generic package 中所有同名的 package file
+// (首次上傳時不存在同名檔案). 刪除需要較高權限; 403 會直接回傳錯誤 (見 CLAUDE.md).
 func (g *gitlabPlatform) deletePackageFile(version, name string) error {
 	pkgID, err := g.findPackage(version)
 	if err != nil {
@@ -379,7 +373,7 @@ func (g *gitlabPlatform) deletePackageFile(version, name string) error {
 			return err
 		}
 		if !ok2xx(status) && status != http.StatusNotFound {
-			return statusError("deleting existing package file "+name, status, body)
+			return statusError("刪除既有 package file "+name, status, body)
 		}
 	}
 	return nil
@@ -399,21 +393,20 @@ func (g *gitlabPlatform) findReleaseAssets(version string) ([]asset, error) {
 			return nil, err
 		}
 		if status == http.StatusNotFound {
-			return nil, fmt.Errorf("release %q not found", version)
+			return nil, fmt.Errorf("release %q 不存在", version)
 		}
 		if !ok2xx(status) {
 			return nil, statusError("GET release "+version, status, body)
 		}
 		if err := json.Unmarshal(body, &rel); err != nil {
-			return nil, fmt.Errorf("parsing release: %w", err)
+			return nil, fmt.Errorf("解析 release 回應: %w", err)
 		}
 	}
 	return g.linkAssets(rel.Assets.Links), nil
 }
 
-// latestRelease returns the newest non-upcoming release. GitLab lists releases
-// newest-first; "latest" excludes upcoming ones (the GitLab analogue of
-// excluding draft / prerelease).
+// latestRelease 回傳最新的非 upcoming release. GitLab 以最新在前的順序列出 release;
+// "latest" 排除 upcoming release (相當於 GitHub 排除 draft / prerelease 的邏輯).
 func (g *gitlabPlatform) latestRelease() (*glRelease, error) {
 	var batch []glRelease
 	if err := g.getJSON(g.projectURL("/releases?per_page=%d&page=1", gitlabPerPage), &batch); err != nil {
@@ -424,11 +417,11 @@ func (g *gitlabPlatform) latestRelease() (*glRelease, error) {
 			return &batch[i], nil
 		}
 	}
-	return nil, fmt.Errorf("no published release found")
+	return nil, fmt.Errorf("找不到已發布的 release")
 }
 
 func (g *gitlabPlatform) download(a asset, w io.Writer) error {
-	// The link target is the by-name generic-package download URL; the token in
-	// the auth headers authorizes private downloads (CLAUDE.md).
+	// link 目標為 by-name generic package 下載 URL;
+	// auth headers 中的 token 授權私有 repo 的下載 (見 CLAUDE.md).
 	return g.getStream(a.ref, nil, w)
 }

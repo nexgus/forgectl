@@ -8,10 +8,9 @@ import (
 	"testing"
 )
 
-// TestClientDispatch proves the wiring: a Client built for a given source
-// reaches that platform's API shape (GitHub under /api/v3/repos, GitLab under
-// /api/v4/projects). It uses a local server so the test touches no network and
-// reads no real credential file.
+// TestClientDispatch 驗證路由接線: 以指定 source 建立的 Client 能對應到該 platform
+// 的 API 路徑 (GitHub 在 /api/v3/repos, GitLab 在 /api/v4/projects). 測試使用
+// 本地伺服器, 不觸碰網路也不讀取真實 credential 檔.
 func TestClientDispatch(t *testing.T) {
 	isolateConfig(t)
 
@@ -21,8 +20,8 @@ func TestClientDispatch(t *testing.T) {
 	)
 	record := func(p string) { mu.Lock(); hit = append(hit, p); mu.Unlock() }
 
-	// Route on the decoded path: GitLab encodes the project path as o%2Fr,
-	// which http.ServeMux would not match against a decoded pattern.
+	// 依解碼後的路徑做路由: GitLab 將 project 路徑編碼為 o%2Fr,
+	// http.ServeMux 無法將其與解碼後的 pattern 比對.
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v3/repos/o/r/releases": // GitHub
@@ -50,7 +49,7 @@ func TestClientDispatch(t *testing.T) {
 	}
 }
 
-// TestSplitRepo pins the GitHub owner/repo parser.
+// TestSplitRepo 固定 GitHub owner/repo 解析器的行為.
 func TestSplitRepo(t *testing.T) {
 	t.Parallel()
 	if o, n, err := splitRepo("owner/repo"); err != nil || o != "owner" || n != "repo" {

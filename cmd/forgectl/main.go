@@ -1,11 +1,8 @@
-// Command forgectl queries and operates releases and assets across GitHub and
-// GitLab through their REST APIs.
+// Command forgectl 透過 GitHub 與 GitLab 的 REST API 查詢與操作 release 和 asset.
 //
-// This file defines the command-line surface (the noun-verb grammar described
-// in docs/cli.md) and dispatches via kong's Run methods. Each command's Run
-// builds a pkg/forge client from the globals and hands the command's own fields
-// to it; the work lives in pkg/forge, which receives what it needs as
-// parameters and reads no global state.
+// 本檔定義命令列介面 (docs/cli.md 描述的名詞-動詞語法), 並透過 kong 的 Run 方法
+// 分派執行. 每個指令的 Run 從全域旗標建立 pkg/forge client, 再把指令本身的欄位傳給它;
+// 實際工作在 pkg/forge 內完成, 它只接受傳入的參數, 不讀取任何全域狀態.
 package main
 
 import (
@@ -17,21 +14,20 @@ import (
 	"forgectl/pkg/version"
 )
 
-// Globals are the flags shared by every command. They mirror the "global
-// flags" and "authentication" sections of docs/cli.md.
+// Globals 是所有指令共用的旗標, 對應 docs/cli.md 的 "global flags" 與 "authentication" 章節.
 type Globals struct {
-	Source    string `enum:"github,gitlab" required:"" help:"Hosting platform: github or gitlab."`
-	Host      string `placeholder:"URL" help:"Base URL of a self-hosted instance; omit for the public site."`
-	Insecure  bool   `help:"Skip TLS certificate verification; use only for trusted self-hosted hosts with self-signed certificates."`
-	Token     string `help:"Override the token."`
-	TokenFile string `type:"path" placeholder:"PATH" help:"Override the token, read from a file."`
-	User      string `help:"Override the user."`
+	Source    string `enum:"github,gitlab" required:"" help:"托管平台: github 或 gitlab."`
+	Host      string `placeholder:"URL" help:"自架實例的 base URL; 使用公開站時省略."`
+	Insecure  bool   `help:"略過 TLS 憑證驗證; 僅適用於具有自簽憑證的受信任自架 host."`
+	Token     string `help:"覆寫 token."`
+	TokenFile string `type:"path" placeholder:"PATH" help:"從檔案讀取 token 並覆寫."`
+	User      string `help:"覆寫使用者名稱."`
 
-	Version kong.VersionFlag `short:"V" help:"Print version information and exit."`
+	Version kong.VersionFlag `short:"V" help:"印出版本資訊後離開."`
 }
 
-// client builds a forge client from the globals. Each Run method calls it so
-// forge depends on no CLI type and reads no shared state.
+// client 從全域旗標建立 forge client. 每個 Run 方法都呼叫它,
+// 使 forge 不依賴任何 CLI 型別, 也不讀取共用狀態.
 func (g *Globals) client() *forge.Client {
 	return forge.New(forge.Config{
 		Source:    g.Source,
@@ -43,94 +39,93 @@ func (g *Globals) client() *forge.Client {
 	})
 }
 
-// CLI is the root of the command tree.
+// CLI 是指令樹的根節點.
 type CLI struct {
 	Globals
 
-	Ping    PingCmd    `cmd:"" help:"Verify the remote settings (host, TLS, and credentials) are correct."`
-	Release ReleaseCmd `cmd:"" help:"Query and manage releases."`
-	Asset   AssetCmd   `cmd:"" help:"Upload and download assets."`
+	Ping    PingCmd    `cmd:"" help:"驗證遠端設定 (host, TLS 及 credential) 是否正確."`
+	Release ReleaseCmd `cmd:"" help:"查詢與管理 release."`
+	Asset   AssetCmd   `cmd:"" help:"上傳與下載 asset."`
 }
 
-// PingCmd implements: forgectl ping
+// PingCmd 實作: forgectl ping
 //
-// It takes no positional arguments: ping validates the connection and
-// credentials (the global flags), not a specific repository.
+// 不接受位置參數: ping 驗證連線與 credential (全域旗標), 而非特定 repo.
 type PingCmd struct{}
 
 func (c *PingCmd) Run(g *Globals) error {
 	return g.client().Ping()
 }
 
-// ReleaseCmd groups the "release" subcommands.
+// ReleaseCmd 彙整 "release" 子指令.
 type ReleaseCmd struct {
-	List   ReleaseListCmd   `cmd:"" help:"List all releases of a repository."`
-	Create ReleaseCreateCmd `cmd:"" help:"Publish a release for a version and attach its uploaded assets."`
+	List   ReleaseListCmd   `cmd:"" help:"列出 repo 的所有 release."`
+	Create ReleaseCreateCmd `cmd:"" help:"為某個版本發布 release, 並掛載已上傳的 asset."`
 }
 
-// AssetCmd groups the "asset" subcommands.
+// AssetCmd 彙整 "asset" 子指令.
 type AssetCmd struct {
-	Upload   AssetUploadCmd   `cmd:"" help:"Upload one or more local files as assets of a version."`
-	Download AssetDownloadCmd `cmd:"" help:"Download the assets of a release, optionally selected by glob."`
+	Upload   AssetUploadCmd   `cmd:"" help:"將一或多個本地檔案以 asset 形式上傳至某版本."`
+	Download AssetDownloadCmd `cmd:"" help:"下載 release 的 asset, 可選擇以 glob 篩選."`
 }
 
-// ReleaseListCmd implements: forgectl release list <repo> [--json]
+// ReleaseListCmd 實作: forgectl release list <repo> [--json]
 type ReleaseListCmd struct {
-	Repo string `arg:"" name:"repo" help:"Target repository as an owner/repo path."`
-	JSON bool   `help:"Emit JSON for scripting instead of human-readable text."`
+	Repo string `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
+	JSON bool   `help:"輸出 JSON 供程式處理, 而非人類可讀的文字格式."`
 }
 
 func (c *ReleaseListCmd) Run(g *Globals) error {
 	return g.client().ReleaseList(c.Repo, c.JSON)
 }
 
-// ReleaseCreateCmd implements:
+// ReleaseCreateCmd 實作:
 // forgectl release create <repo> <version> (--note STR | --note-file PATH) [--commit COMMIT]
 type ReleaseCreateCmd struct {
-	Repo     string `arg:"" name:"repo" help:"Target repository as an owner/repo path."`
-	Version  string `arg:"" name:"version" help:"Release tag (for example v1.2.3); created from --commit when it does not exist."`
-	Note     string `xor:"note" required:"" help:"Release note text."`
-	NoteFile string `xor:"note" required:"" type:"path" placeholder:"PATH" help:"Read the release note from a file (the whole file is the note)."`
-	Commit   string `placeholder:"COMMIT" help:"Commit the new tag points to: a commit SHA, or 'latest' for the default branch HEAD. Required only when the tag does not yet exist."`
+	Repo     string `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
+	Version  string `arg:"" name:"version" help:"Release tag (例如 v1.2.3); tag 不存在時依 --commit 建立."`
+	Note     string `xor:"note" required:"" help:"Release note 文字."`
+	NoteFile string `xor:"note" required:"" type:"path" placeholder:"PATH" help:"從檔案讀取 release note (整個檔案即為 note 內容)."`
+	Commit   string `placeholder:"COMMIT" help:"新 tag 所指向的 commit: 一個 commit SHA, 或 'latest' 代表預設分支的 HEAD. 僅在 tag 尚不存在時必填."`
 }
 
 func (c *ReleaseCreateCmd) Run(g *Globals) error {
 	return g.client().ReleaseCreate(c.Repo, c.Version, c.Note, c.NoteFile, c.Commit)
 }
 
-// AssetUploadCmd implements: forgectl asset upload <repo> <version> <path>[=NAME]...
+// AssetUploadCmd 實作: forgectl asset upload <repo> <version> <path>[=NAME]...
 type AssetUploadCmd struct {
-	Repo    string   `arg:"" name:"repo" help:"Target repository as an owner/repo path."`
-	Version string   `arg:"" name:"version" help:"Version string; the release need not exist yet."`
-	Paths   []string `arg:"" name:"path" help:"One or more local files, each optionally suffixed with =NAME to rename the uploaded asset."`
+	Repo    string   `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
+	Version string   `arg:"" name:"version" help:"版本字串; release 不需預先存在."`
+	Paths   []string `arg:"" name:"path" help:"一或多個本地檔案, 每個可加上 =NAME 後綴以重新命名上傳的 asset."`
 }
 
 func (c *AssetUploadCmd) Run(g *Globals) error {
 	return g.client().AssetUpload(c.Repo, c.Version, c.Paths)
 }
 
-// AssetDownloadCmd implements:
+// AssetDownloadCmd 實作:
 // forgectl asset download <repo> <version> [pattern]... [-d DIR] [-o NAME] [--overwrite]
 type AssetDownloadCmd struct {
-	Repo      string   `arg:"" name:"repo" help:"Target repository as an owner/repo path."`
-	Version   string   `arg:"" name:"version" help:"Release tag, or 'latest' for the newest published release."`
-	Patterns  []string `arg:"" name:"pattern" optional:"" help:"Glob patterns matched against asset names; omit to download every asset."`
-	Dir       string   `short:"d" type:"path" placeholder:"DIR" help:"Directory to download into; created if missing. Defaults to the current directory."`
-	Output    string   `short:"o" placeholder:"NAME" help:"Output filename; valid only when a single asset is downloaded."`
-	Overwrite bool     `help:"Overwrite the target file if it already exists."`
+	Repo      string   `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
+	Version   string   `arg:"" name:"version" help:"Release tag, 或 'latest' 代表最新已發布的 release."`
+	Patterns  []string `arg:"" name:"pattern" optional:"" help:"與 asset 名稱比對的 glob pattern; 省略則下載所有 asset."`
+	Dir       string   `short:"d" type:"path" placeholder:"DIR" help:"下載目標目錄; 不存在時自動建立. 預設為當前目錄."`
+	Output    string   `short:"o" placeholder:"NAME" help:"輸出檔名; 僅在下載單一 asset 時有效."`
+	Overwrite bool     `help:"若目標檔案已存在則覆寫."`
 }
 
 func (c *AssetDownloadCmd) Run(g *Globals) error {
 	return g.client().AssetDownload(c.Repo, c.Version, c.Patterns, c.Dir, c.Output, c.Overwrite)
 }
 
-// newParser builds the kong parser bound to target. main binds it to the parsed
-// CLI; tests bind it to a fresh CLI to exercise the grammar in isolation.
+// newParser 建立綁定至 target 的 kong parser. main 將它綁定至已解析的 CLI;
+// 測試則綁定至全新的 CLI, 以隔離測試語法.
 func newParser(target *CLI) (*kong.Kong, error) {
 	return kong.New(
 		target,
 		kong.Name("forgectl"),
-		kong.Description("Query and operate releases and assets across GitHub and GitLab."),
+		kong.Description("透過 GitHub 與 GitLab 查詢與操作 release 和 asset."),
 		kong.UsageOnError(),
 		kong.Vars{"version": version.Full()},
 	)
@@ -145,7 +140,6 @@ func main() {
 	ctx, err := parser.Parse(os.Args[1:])
 	parser.FatalIfErrorf(err)
 
-	// kong dispatches to the selected command's Run method, injecting the
-	// globals it asks for.
+	// kong 分派至所選指令的 Run 方法, 並注入其所需的全域旗標.
 	ctx.FatalIfErrorf(ctx.Run(&cli.Globals))
 }

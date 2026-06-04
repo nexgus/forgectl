@@ -9,10 +9,9 @@ import (
 	"net/http"
 )
 
-// newHTTPClient builds the HTTP client the release / asset commands share. It
-// honors --insecure the same way Ping does. It sets no overall Timeout: an
-// asset upload or download may transfer a large file, and a fixed deadline
-// would cut long but healthy transfers short.
+// newHTTPClient 建立 release / asset 指令共用的 HTTP client. 處理 --insecure
+// 的方式與 Ping 相同. 不設整體 Timeout: asset 上傳或下載可能傳輸大型檔案,
+// 固定截止時間會中斷長時間但正常的傳輸.
 func newHTTPClient(insecure bool) *http.Client {
 	client := &http.Client{}
 	if insecure {
@@ -23,17 +22,16 @@ func newHTTPClient(insecure bool) *http.Client {
 	return client
 }
 
-// apiCaller issues authenticated requests against one platform's REST API. The
-// authHeaders are attached to every request (the token plus any platform
-// defaults, e.g. GitHub's Accept and API version); per-call headers override
-// them. The platform types embed an apiCaller and add the endpoint logic.
+// apiCaller 對單一平台的 REST API 發出已認證的請求. authHeaders 會附加到每個
+// 請求 (token 加上任何平台預設值, 例如 GitHub 的 Accept 與 API 版本);
+// 逐次呼叫的 header 可覆寫它們. 平台型別內嵌 apiCaller 並加入 endpoint 邏輯.
 type apiCaller struct {
 	http        *http.Client
 	authHeaders map[string]string
 }
 
-// do issues a request, merging the per-call headers over the auth headers. The
-// caller closes the returned response body.
+// do 發出請求, 將逐次呼叫的 header 合併覆寫到認證 header 上.
+// 呼叫方負責關閉回傳的 response body.
 func (ac apiCaller) do(method, url string, headers map[string]string, body io.Reader) (*http.Response, error) {
 	merged := make(map[string]string, len(ac.authHeaders)+len(headers))
 	for k, v := range ac.authHeaders {
@@ -52,10 +50,9 @@ func (ac apiCaller) do(method, url string, headers map[string]string, body io.Re
 	return ac.http.Do(req)
 }
 
-// req issues a request and returns the HTTP status and the fully read body. It
-// returns an error only for transport failures; an HTTP error status is
-// reported through the status code so callers can branch on 404, 403, and the
-// like. It is for small JSON exchanges; downloads stream through getStream.
+// req 發出請求並回傳 HTTP 狀態碼與完整讀取的 body. 僅在傳輸層失敗時回傳 error;
+// HTTP 錯誤狀態透過狀態碼回報, 讓呼叫方可依 404, 403 等情況分支處理.
+// 適用於小型 JSON 交換; 下載則透過 getStream 串流處理.
 func (ac apiCaller) req(method, url string, headers map[string]string, body io.Reader) (int, []byte, error) {
 	resp, err := ac.do(method, url, headers, body)
 	if err != nil {
@@ -64,13 +61,13 @@ func (ac apiCaller) req(method, url string, headers map[string]string, body io.R
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return resp.StatusCode, nil, fmt.Errorf("reading response from %s: %w", url, err)
+		return resp.StatusCode, nil, fmt.Errorf("讀取 %s 的回應時發生錯誤: %w", url, err)
 	}
 	return resp.StatusCode, data, nil
 }
 
-// getJSON performs a GET and unmarshals a 2xx body into out (out may be nil to
-// discard it). Any non-2xx status becomes an error.
+// getJSON 執行 GET 並將 2xx body 反序列化至 out (out 可為 nil 以捨棄內容).
+// 任何非 2xx 狀態均視為 error.
 func (ac apiCaller) getJSON(url string, out any) error {
 	status, body, err := ac.req("GET", url, nil, nil)
 	if err != nil {
@@ -81,13 +78,13 @@ func (ac apiCaller) getJSON(url string, out any) error {
 	}
 	if out != nil {
 		if err := json.Unmarshal(body, out); err != nil {
-			return fmt.Errorf("parsing response from %s: %w", url, err)
+			return fmt.Errorf("解析 %s 的回應時發生錯誤: %w", url, err)
 		}
 	}
 	return nil
 }
 
-// sendJSON sends a JSON-encoded payload and treats any non-2xx as an error.
+// sendJSON 傳送 JSON 編碼的 payload, 並將任何非 2xx 狀態視為 error.
 func (ac apiCaller) sendJSON(method, url string, payload any, action string) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -103,9 +100,8 @@ func (ac apiCaller) sendJSON(method, url string, payload any, action string) err
 	return nil
 }
 
-// getStream streams a GET response body to w with the given extra headers,
-// returning an error for any non-2xx status. It is the download path: the body
-// is copied, never buffered whole.
+// getStream 以指定的額外 header 將 GET response body 串流寫入 w,
+// 任何非 2xx 狀態均回傳 error. 此為下載路徑: body 逐段複製, 不整體緩衝.
 func (ac apiCaller) getStream(url string, headers map[string]string, w io.Writer) error {
 	resp, err := ac.do("GET", url, headers, nil)
 	if err != nil {
@@ -120,9 +116,9 @@ func (ac apiCaller) getStream(url string, headers map[string]string, w io.Writer
 	return err
 }
 
-// paginate fetches successive pages until a page returns fewer than perPage
-// items (the last page). fetch decodes one page and returns its item count; it
-// may return 0 to stop early, for example once a search has found its target.
+// paginate 依序取得各頁, 直到某頁回傳的項目數少於 perPage (即最後一頁).
+// fetch 解碼單頁並回傳其項目數; 可回傳 0 提前停止,
+// 例如搜尋已找到目標時.
 func paginate(perPage int, fetch func(page int) (int, error)) error {
 	for page := 1; ; page++ {
 		n, err := fetch(page)
@@ -135,11 +131,10 @@ func paginate(perPage int, fetch func(page int) (int, error)) error {
 	}
 }
 
-// ok2xx reports whether status is a 2xx success code.
+// ok2xx 回報 status 是否為 2xx 成功狀態碼.
 func ok2xx(status int) bool { return status >= 200 && status < 300 }
 
-// statusError formats a non-2xx API response, including any human-readable
-// message the JSON body carries.
+// statusError 格式化非 2xx 的 API 回應, 包含 JSON body 中任何可供閱讀的訊息.
 func statusError(action string, status int, body []byte) error {
 	if msg := apiMessage(body); msg != "" {
 		return fmt.Errorf("%s: HTTP %d: %s", action, status, msg)
@@ -147,8 +142,8 @@ func statusError(action string, status int, body []byte) error {
 	return fmt.Errorf("%s: HTTP %d", action, status)
 }
 
-// apiMessage extracts an error message from an API JSON body. GitHub uses a
-// "message" field; GitLab uses "message" or "error".
+// apiMessage 從 API JSON body 中提取錯誤訊息. GitHub 使用 "message" 欄位;
+// GitLab 使用 "message" 或 "error".
 func apiMessage(body []byte) string {
 	var m struct {
 		Message string `json:"message"`

@@ -2,7 +2,7 @@ package forge
 
 import "testing"
 
-// TestParsePathSpec pins the "<path>[=NAME]" splitting rule of docs/cli.md.
+// TestParsePathSpec 確認 docs/cli.md 中 "<path>[=NAME]" 分割規則的行為.
 func TestParsePathSpec(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -13,10 +13,10 @@ func TestParsePathSpec(t *testing.T) {
 		{"dist/app-linux=app", "dist/app-linux", "app"},
 		{`D:\path\to\target.txt=beautiful_filename`, `D:\path\to\target.txt`, "beautiful_filename"},
 		{"dist/checksums.txt", "dist/checksums.txt", "checksums.txt"},
-		// The last '=' splits, so a path whose name contains '=' still renames.
+		// 以最後一個 '=' 分割, 因此路徑名稱本身含 '=' 時仍可正常重新命名.
 		{"weird=name/file.bin=final", "weird=name/file.bin", "final"},
-		// A NAME that looks like a path (has a separator) means "no rename":
-		// the whole argument is a plain path.
+		// NAME 看起來像路徑 (含分隔符) 時視為「不重新命名」:
+		// 整個參數均作為純路徑處理.
 		{"a=b/c", "a=b/c", "c"},
 	}
 	for _, tc := range cases {
@@ -28,8 +28,8 @@ func TestParsePathSpec(t *testing.T) {
 	}
 }
 
-// TestMatchAssets pins glob selection: no patterns = all, union of patterns,
-// and exact (wildcard-free) matching.
+// TestMatchAssets 確認 glob 選取行為: 無 pattern 時全選、多 pattern 取聯集,
+// 以及不含萬用字元的精確比對.
 func TestMatchAssets(t *testing.T) {
 	t.Parallel()
 	assets := []asset{

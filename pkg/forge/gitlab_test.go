@@ -10,10 +10,10 @@ import (
 	"testing"
 )
 
-// glServer builds a GitLab-shaped test server and a platform pointed at it. The
-// project path "o/r" is URL-encoded to "o%2Fr" in requests; http.ServeMux does
-// not match that against a decoded pattern, so routing here is a single handler
-// keyed on the decoded r.URL.Path (e.g. "/api/v4/projects/o/r/releases").
+// glServer 建立一個模擬 GitLab 結構的測試伺服器, 並回傳指向該伺服器的 platform.
+// project 路徑 "o/r" 在請求中被 URL-encode 為 "o%2Fr"; http.ServeMux 無法將其
+// 與 decoded 路徑進行比對, 因此這裡使用單一 handler, 以 decoded 的 r.URL.Path
+// (例如 "/api/v4/projects/o/r/releases") 作為路由鍵.
 func glServer(t *testing.T, routes map[string]http.HandlerFunc) *gitlabPlatform {
 	t.Helper()
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -124,13 +124,13 @@ func TestGitLabCreateReleaseAlreadyExists(t *testing.T) {
 	})
 
 	err := g.createRelease("v1", "note", "")
-	if err == nil || !strings.Contains(err.Error(), "already exists") {
+	if err == nil || !strings.Contains(err.Error(), "已存在") {
 		t.Errorf("err = %v, want 'already exists'", err)
 	}
 }
 
-// TestGitLabUploadOverwrite proves the delete-then-upload order, and that an
-// existing release gets a link.
+// TestGitLabUploadOverwrite 驗證先刪後傳的順序, 以及已存在的 release 在上傳時
+// 會取得 asset link.
 func TestGitLabUploadOverwrite(t *testing.T) {
 	t.Parallel()
 	var (

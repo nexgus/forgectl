@@ -7,10 +7,9 @@ import (
 	"testing"
 )
 
-// isolateConfig points the credential search at fresh, empty temporary
-// directories on every platform so a test never reads (or is influenced by) the
-// developer's real credential file. It uses t.Setenv, so callers cannot run in
-// parallel.
+// isolateConfig 在每個平台都將 credential 搜尋路徑指向全新的暫存目錄,
+// 使測試不會讀取 (或受影響於) 開發者真實的 credential file.
+// 使用 t.Setenv, 因此呼叫端不可平行執行.
 func isolateConfig(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -18,8 +17,8 @@ func isolateConfig(t *testing.T) {
 	t.Setenv("AppData", t.TempDir())
 }
 
-// writeCredential writes a credential file into the first directory the search
-// would consult on this platform, after isolateConfig has redirected it.
+// writeCredential 在 isolateConfig 重導後, 將 credential file 寫入此平台
+// 搜尋順序中的第一個目錄.
 func writeCredential(t *testing.T, name, content string) {
 	t.Helper()
 	dirs := credentialDirs()
@@ -73,7 +72,7 @@ func TestResolveAuthFlat(t *testing.T) {
 	isolateConfig(t)
 	writeCredential(t, "credential.yaml", "token: flat_tok\nuser: flat_user\n")
 
-	// A flat file applies to every host.
+	// 扁平格式的 credential file 適用所有 host.
 	a, err := resolveAuth(Config{Source: "github"}, "anything.example.com")
 	if err != nil {
 		t.Fatalf("resolveAuth: %v", err)
@@ -97,7 +96,7 @@ func TestResolveAuthFlagOverride(t *testing.T) {
 	if a.User != "flag_user" {
 		t.Errorf("user = %q, want flag_user (flag overrides file)", a.User)
 	}
-	if !strings.Contains(a.TokenSource, "--token flag") {
+	if !strings.Contains(a.TokenSource, "--token 旗標") {
 		t.Errorf("TokenSource = %q, want it to mention the flag", a.TokenSource)
 	}
 }
@@ -106,8 +105,8 @@ func TestResolveAuthTokenFileOverride(t *testing.T) {
 	isolateConfig(t)
 	writeCredential(t, "credential.toml", `token = "file_tok"`)
 
-	// A token file whose body is padded with whitespace, a BOM, and a
-	// zero-width space; only the token itself should survive.
+	// token file 內容含有空白、BOM 與零寬空格作為 padding;
+	// 解析後只應保留 token 本體.
 	raw := append([]byte{0xEF, 0xBB, 0xBF}, []byte("  \n\t glpat-XYZ \n")...)
 	raw = append(raw, 0xE2, 0x80, 0x8B) // trailing zero-width space
 	tf := filepath.Join(t.TempDir(), "token")
@@ -129,7 +128,7 @@ func TestResolveAuthTokenFileOverride(t *testing.T) {
 
 func TestResolveAuthNoCredentials(t *testing.T) {
 	isolateConfig(t)
-	// No file, no flags: anonymous is valid, not an error.
+	// 無檔案、無旗標: 匿名使用合法, 不應回傳 error.
 	a, err := resolveAuth(Config{Source: "github"}, "github.com")
 	if err != nil {
 		t.Fatalf("resolveAuth: %v", err)
@@ -162,8 +161,7 @@ func TestParseCredentialFormats(t *testing.T) {
 		}
 	}
 
-	// Hierarchical file that does not list the target host yields no
-	// credentials, not an error.
+	// 階層格式中未列出的 host 應回傳空值, 而非 error.
 	tok, _, err := parseCredential([]byte(`{"other.com":{"token":"x"}}`), "json", "github.com")
 	if err != nil || tok != "" {
 		t.Errorf("unlisted host: (token, err) = (%q, %v), want (\"\", nil)", tok, err)

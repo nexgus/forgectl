@@ -16,9 +16,9 @@ const (
 	githubPerPage    = 100
 )
 
-// githubPlatform implements platform against the GitHub REST API. Assets are
-// release assets: asset upload stages them on a draft release, release create
-// publishes it, and downloads go through the asset API endpoint (CLAUDE.md).
+// githubPlatform 實作 platform 介面, 對應 GitHub REST API. Asset 即 release asset:
+// asset upload 將檔案暫存於 draft release, release create 正式發布,
+// 下載則透過 asset API endpoint (CLAUDE.md).
 type githubPlatform struct {
 	apiCaller
 	base  string
@@ -42,9 +42,8 @@ func newGitHubPlatform(client *http.Client, base, token, owner, repo string) *gi
 	}
 }
 
-// ghAsset / ghRelease mirror the GitHub REST responses, with only the fields
-// the commands use. The assets array holds user-uploaded assets only (the
-// auto-generated source archives are separate zipball / tarball URLs).
+// ghAsset / ghRelease 對應 GitHub REST 回應, 只保留各指令所需的欄位.
+// assets 陣列僅含使用者上傳的 asset (自動產生的原始碼壓縮檔另以 zipball / tarball URL 存取).
 type ghAsset struct {
 	ID                 int64  `json:"id"`
 	Name               string `json:"name"`
@@ -96,8 +95,7 @@ func (g *githubPlatform) listReleases() ([]release, error) {
 	return out, nil
 }
 
-// normalizeAssets converts release assets to the normalized form, recording the
-// asset API endpoint as the download handle.
+// normalizeAssets 將 release asset 轉為統一格式, 並以 asset API endpoint 作為下載 handle.
 func (g *githubPlatform) normalizeAssets(assets []ghAsset) []asset {
 	out := make([]asset, 0, len(assets))
 	for _, a := range assets {
@@ -112,9 +110,8 @@ func (g *githubPlatform) normalizeAssets(assets []ghAsset) []asset {
 	return out
 }
 
-// tagCommit resolves the commit a release's tag points to, dereferencing an
-// annotated tag. Only release tags are resolved, one at a time (CLAUDE.md). An
-// unresolvable tag (e.g. a draft whose tag does not exist yet) yields "".
+// tagCommit 解析 release 的 tag 所指向的 commit, 並會解參考 annotated tag.
+// 只逐一解析有 release 的 tag (CLAUDE.md). 無法解析的 tag (例如 draft 的 tag 尚未建立) 回傳 "".
 func (g *githubPlatform) tagCommit(tag string) string {
 	if tag == "" {
 		return ""
@@ -138,7 +135,7 @@ func (g *githubPlatform) createRelease(version, note, commit string) error {
 		return err
 	}
 	if existing != nil && !existing.Draft {
-		return fmt.Errorf("release %s already exists (published); not overwriting", version)
+		return fmt.Errorf("release %s 已存在 (已發布); 不覆寫", version)
 	}
 
 	tagExists, err := g.tagExists(version)
@@ -151,32 +148,30 @@ func (g *githubPlatform) createRelease(version, note, commit string) error {
 	}
 
 	if existing != nil {
-		// A draft staged by asset upload: turn it into a published release,
-		// writing the note (and creating the tag from target_commitish if it
-		// does not exist yet).
+		// asset upload 暫存的 draft: 將其轉為正式 release,
+		// 寫入 note (若 tag 尚不存在, 則依 target_commitish 建立).
 		payload := map[string]any{"draft": false, "name": version, "body": note, "tag_name": version}
 		if commitish != "" {
 			payload["target_commitish"] = commitish
 		}
-		return g.sendJSON("PATCH", g.reposURL("/releases/%d", existing.ID), payload, "publishing release "+version)
+		return g.sendJSON("PATCH", g.reposURL("/releases/%d", existing.ID), payload, "發布 release "+version)
 	}
 
 	payload := map[string]any{"tag_name": version, "name": version, "body": note}
 	if commitish != "" {
 		payload["target_commitish"] = commitish
 	}
-	return g.sendJSON("POST", g.reposURL("/releases"), payload, "creating release "+version)
+	return g.sendJSON("POST", g.reposURL("/releases"), payload, "建立 release "+version)
 }
 
-// targetCommitish decides the target_commitish for a new tag. When the tag
-// already exists it is irrelevant (""); otherwise --commit is required and
-// "latest" resolves to the default branch's head.
+// targetCommitish 決定新 tag 的 target_commitish. 若 tag 已存在則無需指定 (回傳 "");
+// 否則必須提供 --commit, 值為 "latest" 時解析為預設分支的最新 commit.
 func (g *githubPlatform) targetCommitish(tagExists bool, commit, version string) (string, error) {
 	if tagExists {
 		return "", nil
 	}
 	if commit == "" {
-		return "", fmt.Errorf("tag %s does not exist; specify --commit (a commit SHA or 'latest')", version)
+		return "", fmt.Errorf("tag %s 不存在; 請以 --commit 指定 commit SHA 或 'latest'", version)
 	}
 	if commit == "latest" {
 		return g.defaultBranch()
@@ -184,9 +179,9 @@ func (g *githubPlatform) targetCommitish(tagExists bool, commit, version string)
 	return commit, nil
 }
 
-// findReleaseByTag returns the release whose tag_name equals tag, or nil. It
-// scans the release list rather than GET /releases/tags/{tag} because that
-// endpoint omits drafts, and a draft is exactly what asset upload leaves behind.
+// findReleaseByTag 回傳 tag_name 等於 tag 的 release, 找不到則回傳 nil.
+// 此函式掃描 release 清單而非使用 GET /releases/tags/{tag}, 因為該 endpoint 不回傳 draft,
+// 而 asset upload 留下的正是 draft release.
 func (g *githubPlatform) findReleaseByTag(tag string) (*ghRelease, error) {
 	var found *ghRelease
 	err := paginate(githubPerPage, func(page int) (int, error) {
@@ -198,7 +193,7 @@ func (g *githubPlatform) findReleaseByTag(tag string) (*ghRelease, error) {
 			if batch[i].TagName == tag {
 				r := batch[i]
 				found = &r
-				return 0, nil // stop paging: target found
+				return 0, nil // 找到目標, 停止分頁
 			}
 		}
 		return len(batch), nil
@@ -206,7 +201,7 @@ func (g *githubPlatform) findReleaseByTag(tag string) (*ghRelease, error) {
 	return found, err
 }
 
-// tagExists reports whether the git tag exists in the repository.
+// tagExists 回報 git tag 是否存在於 repository.
 func (g *githubPlatform) tagExists(tag string) (bool, error) {
 	status, body, err := g.req("GET", g.reposURL("/git/ref/tags/%s", url.PathEscape(tag)), nil, nil)
 	if err != nil {
@@ -218,12 +213,11 @@ func (g *githubPlatform) tagExists(tag string) (bool, error) {
 	case http.StatusNotFound:
 		return false, nil
 	default:
-		return false, statusError("checking tag "+tag, status, body)
+		return false, statusError("檢查 tag "+tag, status, body)
 	}
 }
 
-// defaultBranch returns the repository's default branch name, used to resolve
-// --commit latest.
+// defaultBranch 回傳 repository 的預設分支名稱, 用於解析 --commit latest.
 func (g *githubPlatform) defaultBranch() (string, error) {
 	var r struct {
 		DefaultBranch string `json:"default_branch"`
@@ -232,7 +226,7 @@ func (g *githubPlatform) defaultBranch() (string, error) {
 		return "", err
 	}
 	if r.DefaultBranch == "" {
-		return "", fmt.Errorf("could not determine the default branch of %s/%s", g.owner, g.repo)
+		return "", fmt.Errorf("無法取得 %s/%s 的預設分支", g.owner, g.repo)
 	}
 	return r.DefaultBranch, nil
 }
@@ -243,8 +237,8 @@ func (g *githubPlatform) newUploader(version string) (uploader, error) {
 		return nil, err
 	}
 	if rel == nil {
-		// No release for this tag yet: stage assets on a fresh draft (the tag
-		// need not exist; release create publishes it later — CLAUDE.md).
+		// 此 tag 尚無 release: 在新 draft 上暫存 asset
+		// (tag 可暫不存在; release create 稍後正式發布 — CLAUDE.md).
 		rel, err = g.createDraft(version)
 		if err != nil {
 			return nil, err
@@ -253,7 +247,7 @@ func (g *githubPlatform) newUploader(version string) (uploader, error) {
 	return &githubUploader{g: g, releaseID: rel.ID, uploadURL: rel.UploadURL}, nil
 }
 
-// createDraft creates a draft release to stage assets on.
+// createDraft 建立一個 draft release 以暫存 asset.
 func (g *githubPlatform) createDraft(version string) (*ghRelease, error) {
 	data, _ := json.Marshal(map[string]any{"tag_name": version, "draft": true})
 	status, body, err := g.req("POST", g.reposURL("/releases"), map[string]string{"Content-Type": "application/json"}, bytes.NewReader(data))
@@ -261,17 +255,17 @@ func (g *githubPlatform) createDraft(version string) (*ghRelease, error) {
 		return nil, err
 	}
 	if !ok2xx(status) {
-		return nil, statusError("creating draft release "+version, status, body)
+		return nil, statusError("建立 draft release "+version, status, body)
 	}
 	var rel ghRelease
 	if err := json.Unmarshal(body, &rel); err != nil {
-		return nil, fmt.Errorf("parsing created release: %w", err)
+		return nil, fmt.Errorf("解析建立的 release: %w", err)
 	}
 	return &rel, nil
 }
 
-// githubUploader stages files on one (get-or-created) release, reusing the
-// release id and its upload_url template across files.
+// githubUploader 將檔案暫存於一個 (取得或建立的) release,
+// 跨檔案重複使用同一個 release id 及其 upload_url template.
 type githubUploader struct {
 	g         *githubPlatform
 	releaseID int64
@@ -283,8 +277,8 @@ func (u *githubUploader) upload(file localAsset) error {
 	if err != nil {
 		return err
 	}
-	// GitHub rejects a duplicate asset name, so remove any same-name asset
-	// first; upload is "this is now the asset" (docs/cli.md).
+	// GitHub 不允許重複的 asset 名稱, 故先刪除同名 asset 再上傳;
+	// 語意為「此即目前的 asset」(docs/cli.md).
 	if err := u.g.deleteAssetByName(u.releaseID, file.name); err != nil {
 		return err
 	}
@@ -295,12 +289,12 @@ func (u *githubUploader) upload(file localAsset) error {
 		return err
 	}
 	if !ok2xx(status) {
-		return statusError("uploading "+file.name, status, body)
+		return statusError("上傳 "+file.name, status, body)
 	}
 	return nil
 }
 
-// deleteAssetByName removes any asset of the release that has the given name.
+// deleteAssetByName 刪除 release 中所有與指定名稱相符的 asset.
 func (g *githubPlatform) deleteAssetByName(releaseID int64, name string) error {
 	var assets []ghAsset
 	if err := g.getJSON(g.reposURL("/releases/%d/assets?per_page=100", releaseID), &assets); err != nil {
@@ -315,15 +309,15 @@ func (g *githubPlatform) deleteAssetByName(releaseID int64, name string) error {
 			return err
 		}
 		if !ok2xx(status) && status != http.StatusNotFound {
-			return statusError("deleting existing asset "+name, status, body)
+			return statusError("刪除既有 asset "+name, status, body)
 		}
 	}
 	return nil
 }
 
-// uploadEndpoint fills GitHub's upload_url template (".../assets{?name,label}")
-// with the asset name. Using the template keeps GitHub Enterprise's upload host
-// correct without hardcoding uploads.github.com.
+// uploadEndpoint 將 GitHub 的 upload_url template (".../assets{?name,label}")
+// 填入 asset 名稱. 使用 template 可確保 GitHub Enterprise 的 upload host 正確,
+// 無需寫死 uploads.github.com.
 func uploadEndpoint(template, name string) string {
 	base := template
 	if i := strings.IndexByte(base, '{'); i >= 0 {
@@ -344,20 +338,20 @@ func (g *githubPlatform) findReleaseAssets(version string) ([]asset, error) {
 		return nil, err
 	}
 	if status == http.StatusNotFound {
-		return nil, fmt.Errorf("release %q not found", version)
+		return nil, fmt.Errorf("release %q 不存在", version)
 	}
 	if !ok2xx(status) {
 		return nil, statusError("GET "+endpoint, status, body)
 	}
 	var rel ghRelease
 	if err := json.Unmarshal(body, &rel); err != nil {
-		return nil, fmt.Errorf("parsing release: %w", err)
+		return nil, fmt.Errorf("解析 release: %w", err)
 	}
 	return g.normalizeAssets(rel.Assets), nil
 }
 
 func (g *githubPlatform) download(a asset, w io.Writer) error {
-	// The asset API endpoint streams the bytes with the token attached, so
-	// private repos work; browser_download_url would not (CLAUDE.md).
+	// asset API endpoint 會附上 token 串流位元組, 因此私有 repo 可正常下載;
+	// 若改用 browser_download_url 則無法攜帶 token (CLAUDE.md).
 	return g.getStream(a.ref, map[string]string{"Accept": "application/octet-stream"}, w)
 }

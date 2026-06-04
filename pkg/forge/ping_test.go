@@ -29,7 +29,7 @@ func TestPingGitLab(t *testing.T) {
 	if err := New(Config{Source: "gitlab", Host: srv.URL, Token: "bad"}).Ping(); err == nil {
 		t.Error("Ping with an invalid token: want an error")
 	}
-	// No token: connectivity still passes and auth is skipped (anonymous use).
+	// 無 token: 連線層仍通過, 認證層略過 (匿名為合法用法).
 	if err := New(Config{Source: "gitlab", Host: srv.URL}).Ping(); err != nil {
 		t.Errorf("Ping anonymous (no token): %v", err)
 	}
@@ -63,7 +63,7 @@ func TestPingConnectivityFailure(t *testing.T) {
 	isolateConfig(t)
 	srv := httptest.NewServer(http.NewServeMux())
 	url := srv.URL
-	srv.Close() // nothing is listening on url now
+	srv.Close() // url 上此時已無任何監聽程式
 	if err := New(Config{Source: "gitlab", Host: url, Token: "good"}).Ping(); err == nil {
 		t.Error("Ping against a dead server: want a connectivity error")
 	}
@@ -81,8 +81,7 @@ func TestPingInsecureTLS(t *testing.T) {
 	srv := httptest.NewTLSServer(mux)
 	defer srv.Close()
 
-	// The self-signed certificate is rejected at the connectivity layer
-	// unless TLS verification is disabled.
+	// 自簽憑證在連線層會被拒絕, 除非停用 TLS 驗證.
 	if err := New(Config{Source: "gitlab", Host: srv.URL, Token: "good"}).Ping(); err == nil {
 		t.Error("Ping over self-signed TLS without --insecure: want an error")
 	}

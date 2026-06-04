@@ -10,9 +10,8 @@ import (
 func ptrBool(b bool) *bool    { return &b }
 func ptrInt64(n int64) *int64 { return &n }
 
-// TestPrintReleasesText pins the human-readable listing: GitHub shows sizes and
-// (draft)/(prerelease) labels; an unnamed release and an empty asset list use
-// the documented placeholders.
+// TestPrintReleasesText 鎖定人可讀清單的輸出: GitHub 顯示大小與
+// (draft)/(prerelease) 標籤; 未命名的 release 與空 asset 清單使用文件規定的佔位字串.
 func TestPrintReleasesText(t *testing.T) {
 	t.Parallel()
 	releases := []release{
@@ -41,7 +40,7 @@ func TestPrintReleasesText(t *testing.T) {
 	for _, want := range []string{
 		"[1] first public release",
 		"release tag: v1.2.3\n",
-		"commit hash: a1b2c3d\n", // short commit
+		"commit hash: a1b2c3d\n", // 縮短的 commit SHA
 		"assets (1):",
 		"- app-linux (8.4 MiB)",
 		"http://x/app-linux",
@@ -56,7 +55,7 @@ func TestPrintReleasesText(t *testing.T) {
 	}
 }
 
-// TestPrintReleasesTextEmpty pins the no-release message.
+// TestPrintReleasesTextEmpty 鎖定無 release 時的輸出訊息.
 func TestPrintReleasesTextEmpty(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
@@ -66,8 +65,8 @@ func TestPrintReleasesTextEmpty(t *testing.T) {
 	}
 }
 
-// TestPrintReleasesJSON pins the --json shape, including the null fields a
-// platform has no value for (here GitLab: no draft/prerelease/size).
+// TestPrintReleasesJSON 鎖定 --json 的輸出結構, 包含平台無對應值時的 null 欄位
+// (此處為 GitLab: 無 draft/prerelease/size).
 func TestPrintReleasesJSON(t *testing.T) {
 	t.Parallel()
 	releases := []release{{

@@ -1,38 +1,34 @@
 #!/bin/bash
-# Build forgectl for every supported platform.
+# 為所有支援的平台編譯 forgectl.
 #
-# Targets: windows/amd64, linux/amd64, linux/arm64, darwin/arm64.
+# 目標平台: windows/amd64, linux/amd64, linux/arm64, darwin/arm64.
 #
-# Each binary is written to bin/ as forgectl-<version>-<os>-<arch> (with a
-# .exe suffix on Windows). A short symlink for the host platform
-# (bin/forgectl, or bin/forgectl.exe on a Windows host) points at the matching
-# binary for convenience.
+# 每個 binary 以 forgectl-<version>-<os>-<arch> 的命名寫入 bin/ (Windows 加 .exe 副檔名).
+# 並為當前主機平台建立一個短 symlink (bin/forgectl, Windows 主機則為 bin/forgectl.exe),
+# 指向對應的 binary 以便直接呼叫.
 #
 # Usage: bash build.sh
 
-# pipefail makes a pipeline fail if any stage fails; -e exits on the first
-# unhandled error.
+# pipefail 使管道中任一階段失敗時整個管道即失敗; -e 在第一個未處理的錯誤時退出.
 set -eo pipefail
 
-# Change to the script's directory (the repo root) so the script can be run
-# from any location.
+# 切換至腳本所在目錄 (repo 根目錄), 使腳本可從任意位置執行.
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-# BIN is the output binary name and the cmd/ subdirectory name.
-# MODULE is the Go module path, used to address the version package for
-# -ldflags injection.
+# BIN 是輸出 binary 的名稱, 也是 cmd/ 子目錄的名稱.
+# MODULE 是 Go module 路徑, 用於 -ldflags 注入時定位 version package.
 BIN=forgectl
 MODULE=forgectl
 
-# Reject unknown arguments rather than ignoring them.
+# 拒絕未知引數, 不予略過.
 if [ "$#" -gt 0 ]; then
     echo "Error: unexpected argument: $1" >&2
     echo "Usage: bash build.sh" >&2
     exit 1
 fi
 
-# Version metadata injected into ${MODULE}/pkg/version at build time. COMMIT
-# falls back to "unknown" outside a git checkout or before the first commit.
+# 在編譯時注入至 ${MODULE}/pkg/version 的版本後設資料. 若在 git checkout 之外或尚無任何
+# commit, COMMIT 回退為 "unknown".
 COMMIT=$(git describe --match=NeVeRmAtCh --always --abbrev=8 --dirty 2>/dev/null || echo "unknown")
 GOVER=$(go version | cut -d ' ' -f 3)
 VER=$(grep 'const String' pkg/version/version.go | sed -E 's/.*"([^"]+)".*/\1/')
@@ -41,9 +37,8 @@ if [ -z "$VER" ]; then
     exit 1
 fi
 
-# BuildDate is the build machine's local time in ISO 8601 with a timezone
-# offset (for example 2026-06-04T08:19:01+0800). It is captured once so that
-# every binary from this build carries the same timestamp.
+# BuildDate 是編譯機器的本地時間, 格式為帶時區偏移的 ISO 8601
+# (例如 2026-06-04T08:19:01+0800). 此值擷取一次後, 本次編譯的所有 binary 都帶有相同時間戳記.
 BUILDDATE=$(date +%Y-%m-%dT%H:%M:%S%z)
 
 LDFLAGS="-w \
@@ -51,7 +46,7 @@ LDFLAGS="-w \
 -X ${MODULE}/pkg/version.GoVersion=${GOVER} \
 -X ${MODULE}/pkg/version.BuildDate=${BUILDDATE}"
 
-# Target platforms as "os/arch" pairs.
+# 目標平台, 以 "os/arch" 配對表示.
 TARGETS=(
     "windows/amd64"
     "linux/amd64"
@@ -59,9 +54,8 @@ TARGETS=(
     "darwin/arm64"
 )
 
-# build_target compiles one os/arch pair into bin/. forgectl needs no cgo, so
-# every target is built with CGO_ENABLED=0 for a static, cross-compilable
-# binary.
+# build_target 將一個 os/arch 配對編譯至 bin/. forgectl 不需要 cgo,
+# 因此所有目標均以 CGO_ENABLED=0 編譯為靜態、可跨平台的 binary.
 function build_target {
     local os="$1" arch="$2"
     local out="bin/${BIN}-${VER}-${os}-${arch}"
@@ -74,8 +68,7 @@ function build_target {
         || { echo "Error: failed to build ${os}/${arch}." >&2; exit 1; }
 }
 
-# mklink creates a short symlink for the host platform that points at the
-# matching binary, when such a binary was built.
+# mklink 為主機平台建立一個短 symlink, 指向對應的 binary (前提是該 binary 已被編譯).
 function mklink {
     local os arch suffix=""
     os=$(uname | tr '[:upper:]' '[:lower:]')

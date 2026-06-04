@@ -7,10 +7,9 @@ import (
 	"os"
 )
 
-// release is the normalized, cross-platform view of one release. Fields a
-// platform has no concept of are nil pointers (GitLab has no draft / prerelease;
-// GitHub has no upcoming), which lets release list render and the --json output
-// emit null exactly where docs/cli.md says to.
+// release 是單一 release 的標準化跨平台視圖. 平台沒有對應概念的欄位為 nil 指標
+// (GitLab 無 draft / prerelease; GitHub 無 upcoming), 使 release list 的文字輸出
+// 與 --json 輸出能在 docs/cli.md 規定之處正確輸出 null.
 type release struct {
 	Name       string
 	Tag        string
@@ -21,10 +20,9 @@ type release struct {
 	Assets     []asset
 }
 
-// asset is the normalized view of one downloadable asset. Size is nil where the
-// platform does not report one (GitLab asset links carry no size). ref is the
-// platform-specific download handle (a GitHub asset API URL, a GitLab link URL)
-// and is not part of any output.
+// asset 是單一可下載 asset 的標準化視圖. Size 在平台未回報大小時為 nil
+// (GitLab asset link 不帶大小). ref 是平台專屬的下載句柄
+// (GitHub asset API URL 或 GitLab link URL), 不納入任何輸出.
 type asset struct {
 	Name string
 	URL  string
@@ -32,7 +30,7 @@ type asset struct {
 	ref  string
 }
 
-// ReleaseList implements: forgectl release list <repo> [--json]
+// ReleaseList 實作: forgectl release list <repo> [--json]
 func (c *Client) ReleaseList(repo string, asJSON bool) error {
 	p, err := c.platform(repo)
 	if err != nil {
@@ -49,7 +47,7 @@ func (c *Client) ReleaseList(repo string, asJSON bool) error {
 	return nil
 }
 
-// ReleaseCreate implements:
+// ReleaseCreate 實作:
 // forgectl release create <repo> <version> (--note STR | --note-file PATH) [--commit COMMIT]
 func (c *Client) ReleaseCreate(repo, version, note, noteFile, commit string) error {
 	text, err := noteText(note, noteFile)
@@ -63,26 +61,26 @@ func (c *Client) ReleaseCreate(repo, version, note, noteFile, commit string) err
 	if err := p.createRelease(version, text, commit); err != nil {
 		return err
 	}
-	fmt.Printf("release %s created\n", version)
+	fmt.Printf("release %s 已建立\n", version)
 	return nil
 }
 
-// noteText resolves the release note from the inline --note or the --note-file
-// path; the CLI enforces that exactly one is given. --note-file reads the whole
-// file as the note (like --token-file, no stdin "-").
+// noteText 從行內 --note 或 --note-file 路徑解析 release 備註;
+// CLI 強制恰好提供其中一個. --note-file 讀取整個檔案作為備註
+// (同 --token-file, 不支援 stdin "-").
 func noteText(note, noteFile string) (string, error) {
 	if noteFile != "" {
 		data, err := os.ReadFile(noteFile)
 		if err != nil {
-			return "", fmt.Errorf("reading --note-file %s: %w", noteFile, err)
+			return "", fmt.Errorf("讀取 --note-file %s 失敗: %w", noteFile, err)
 		}
 		return string(data), nil
 	}
 	return note, nil
 }
 
-// printReleasesText renders the human-readable release listing of docs/cli.md.
-// It shows no total count and separates entries with a blank line.
+// printReleasesText 輸出 docs/cli.md 規定的人可讀 release 清單.
+// 不顯示總筆數, 各項目以空行分隔.
 func printReleasesText(w io.Writer, releases []release) {
 	if len(releases) == 0 {
 		fmt.Fprintln(w, "沒有 release")
@@ -119,9 +117,8 @@ func printReleasesText(w io.Writer, releases []release) {
 	}
 }
 
-// releaseLabels renders the status suffix on a release's tag line: GitHub's
-// (draft) / (prerelease), GitLab's (upcoming). A plain published release has
-// none.
+// releaseLabels 輸出 release tag 行的狀態後綴: GitHub 的
+// (draft) / (prerelease), GitLab 的 (upcoming). 一般已發布的 release 無後綴.
 func releaseLabels(r release) string {
 	var s string
 	if r.Draft != nil && *r.Draft {
@@ -136,8 +133,8 @@ func releaseLabels(r release) string {
 	return s
 }
 
-// releaseJSON / assetJSON are the --json shapes of docs/cli.md. The pointer
-// fields marshal to null where a platform has no corresponding value.
+// releaseJSON / assetJSON 是 docs/cli.md 規定的 --json 輸出結構.
+// 指標欄位在平台無對應值時序列化為 null.
 type releaseJSON struct {
 	Name       string      `json:"name"`
 	Tag        string      `json:"tag"`
@@ -154,7 +151,7 @@ type assetJSON struct {
 	Size *int64 `json:"size"`
 }
 
-// printReleasesJSON writes the releases as the JSON array of docs/cli.md.
+// printReleasesJSON 將 release 清單以 docs/cli.md 規定的 JSON 陣列格式寫出.
 func printReleasesJSON(w io.Writer, releases []release) error {
 	out := make([]releaseJSON, 0, len(releases))
 	for _, r := range releases {
@@ -180,8 +177,7 @@ func printReleasesJSON(w io.Writer, releases []release) error {
 	return nil
 }
 
-// shortCommit abbreviates a commit SHA to its first seven characters for the
-// text listing.
+// shortCommit 將 commit SHA 縮短為前七個字元, 供文字清單顯示使用.
 func shortCommit(sha string) string {
 	if len(sha) > 7 {
 		return sha[:7]
@@ -189,8 +185,8 @@ func shortCommit(sha string) string {
 	return sha
 }
 
-// humanSize renders a byte count as a human-readable size (B, KiB, MiB, ...),
-// matching the release-list output in docs/cli.md.
+// humanSize 將位元組數轉換為人可讀的大小字串 (B, KiB, MiB, ...),
+// 格式與 docs/cli.md 的 release-list 輸出一致.
 func humanSize(n int64) string {
 	const unit = 1024
 	if n < unit {

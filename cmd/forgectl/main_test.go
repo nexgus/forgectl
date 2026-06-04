@@ -9,8 +9,8 @@ import (
 	"github.com/alecthomas/kong"
 )
 
-// parse runs the real grammar against args, binding into a fresh CLI so each
-// test stays independent of any shared state and can run in parallel.
+// parse 將真實語法套用至 args, 並綁定至全新的 CLI,
+// 使每個測試互相獨立且可平行執行.
 func parse(t *testing.T, args ...string) (*CLI, *kong.Context, error) {
 	t.Helper()
 	var c CLI
@@ -42,8 +42,7 @@ func TestReleaseList(t *testing.T) {
 	}
 }
 
-// TestPing pins the ping grammar: it carries the global flags and takes no
-// positional arguments.
+// TestPing 固定 ping 的語法: 攜帶全域旗標, 不接受位置參數.
 func TestPing(t *testing.T) {
 	t.Parallel()
 	t.Run("flags", func(t *testing.T) {
@@ -96,8 +95,7 @@ func TestSourceValidation(t *testing.T) {
 	}
 }
 
-// TestReleaseCreateNoteXor pins the xor:"note" constraint: exactly one of
-// --note / --note-file is required.
+// TestReleaseCreateNoteXor 固定 xor:"note" 約束: --note 與 --note-file 必須且只能擇一.
 func TestReleaseCreateNoteXor(t *testing.T) {
 	t.Parallel()
 	base := []string{"--source", "github", "release", "create", "r", "v1"}
@@ -138,7 +136,7 @@ func TestAssetUploadPaths(t *testing.T) {
 	}
 }
 
-// TestAssetDownloadOptionalPattern pins that the variadic pattern is optional.
+// TestAssetDownloadOptionalPattern 固定可變參數 pattern 為選填.
 func TestAssetDownloadOptionalPattern(t *testing.T) {
 	t.Parallel()
 	t.Run("no pattern", func(t *testing.T) {
@@ -166,19 +164,17 @@ func TestAssetDownloadOptionalPattern(t *testing.T) {
 	})
 }
 
-// TestRunDispatch checks the wiring from each command's Run through to forge:
-// every Run builds a client from the globals and reaches the matching handler.
-// It points the host at a closed address, so each handler errors only after it
-// has built the client and attempted real work (a refused connection, or — for
-// upload, which is reached the same way — the work that follows).
+// TestRunDispatch 驗證每個指令的 Run 能正確串接至 forge:
+// 每個 Run 從全域旗標建立 client 並觸及對應的處理器.
+// 將 host 指向已關閉的位址, 使各處理器在建立 client 並嘗試實際操作後才報錯
+// (連線被拒, 或對於 upload 而言, 相同路徑之後的工作).
 func TestRunDispatch(t *testing.T) {
-	// Isolate the credential search so the test reads no real file.
+	// 隔離 credential 搜尋路徑, 避免測試讀取真實檔案.
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("AppData", t.TempDir())
 
-	// A server we immediately close: nothing listens on its address, so any
-	// network call is refused promptly.
+	// 立即關閉的 server: 其位址沒有任何監聽者, 任何網路呼叫都會被迅速拒絕.
 	srv := httptest.NewServer(http.NewServeMux())
 	dead := srv.URL
 	srv.Close()
