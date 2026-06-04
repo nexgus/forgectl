@@ -110,3 +110,12 @@ Enterprise) 才是 `{host}/api/v3`.
   YAML = `gopkg.in/yaml.v3`, JSON = 標準庫 `encoding/json`. 解析時一律先 unmarshal 進
   `map[string]any`, 再判定扁平 / 階層 (頂層出現 map 值 = 階層, 出現 `token` / `user` 字串
   = 扁平, 兩者並存即報錯); 見 `pkg/forge/credential.go`.
+- **`<version>` 位置參數的 semver 守門**: `<version>` 是貫穿各指令的 join key, 漏填時後面
+  的 `<path>` / `<pattern>` 會被當成版本而誤觸操作. 故把版本欄位宣告為自訂型別 (`Version`
+  / `VersionOrLatest`, 見 `cmd/forgectl/versionarg.go`), 由 kong 在**解析階段**呼叫其
+  `Validate` 做守門, 在送出任何請求前放棄執行 (錯誤連同 usage 一併印出, 直接點出可能漏填).
+  - 驗證委由 `golang.org/x/mod/semver` (Go 團隊維護). 該模組要求 `v` 前綴, 故缺前綴時先
+    補 `v` 再驗證, 以同時接受 `v1.2.3` 與 `1.2.3`; **不改寫**使用者輸入的 tag, 僅判定真偽.
+  - `release create` / `asset upload` 用 `Version` (嚴格 semver); `asset download` 用
+    `VersionOrLatest`, 額外接受特殊值 `latest`. 直接以結構建構並呼叫 `Run` 的測試 (不經
+    kong 解析) 不觸發此守門, 不受影響.

@@ -82,41 +82,41 @@ func (c *ReleaseListCmd) Run(g *Globals) error {
 // ReleaseCreateCmd 實作:
 // forgectl release create <repo> <version> (--note STR | --note-file PATH) [--commit COMMIT]
 type ReleaseCreateCmd struct {
-	Repo     string `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
-	Version  string `arg:"" name:"version" help:"Release tag (例如 v1.2.3); tag 不存在時依 --commit 建立."`
-	Note     string `xor:"note" required:"" help:"Release note 文字."`
-	NoteFile string `xor:"note" required:"" type:"path" placeholder:"PATH" help:"從檔案讀取 release note (整個檔案即為 note 內容)."`
-	Commit   string `placeholder:"COMMIT" help:"新 tag 所指向的 commit: 一個 commit SHA, 或 'latest' 代表預設分支的 HEAD. 僅在 tag 尚不存在時必填."`
+	Repo     string  `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
+	Version  Version `arg:"" name:"version" help:"Release tag (例如 v1.2.3); tag 不存在時依 --commit 建立."`
+	Note     string  `xor:"note" required:"" help:"Release note 文字."`
+	NoteFile string  `xor:"note" required:"" type:"path" placeholder:"PATH" help:"從檔案讀取 release note (整個檔案即為 note 內容)."`
+	Commit   string  `placeholder:"COMMIT" help:"新 tag 所指向的 commit: 一個 commit SHA, 或 'latest' 代表預設分支的 HEAD. 僅在 tag 尚不存在時必填."`
 }
 
 func (c *ReleaseCreateCmd) Run(g *Globals) error {
-	return g.client().ReleaseCreate(c.Repo, c.Version, c.Note, c.NoteFile, c.Commit)
+	return g.client().ReleaseCreate(c.Repo, string(c.Version), c.Note, c.NoteFile, c.Commit)
 }
 
 // AssetUploadCmd 實作: forgectl asset upload <repo> <version> <path>[=NAME]...
 type AssetUploadCmd struct {
 	Repo    string   `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
-	Version string   `arg:"" name:"version" help:"版本字串; release 不需預先存在."`
+	Version Version  `arg:"" name:"version" help:"版本字串; release 不需預先存在."`
 	Paths   []string `arg:"" name:"path" help:"一或多個本地檔案, 每個可加上 =NAME 後綴以重新命名上傳的 asset."`
 }
 
 func (c *AssetUploadCmd) Run(g *Globals) error {
-	return g.client().AssetUpload(c.Repo, c.Version, c.Paths)
+	return g.client().AssetUpload(c.Repo, string(c.Version), c.Paths)
 }
 
 // AssetDownloadCmd 實作:
 // forgectl asset download <repo> <version> [pattern]... [-d DIR] [-o NAME] [--overwrite]
 type AssetDownloadCmd struct {
-	Repo      string   `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
-	Version   string   `arg:"" name:"version" help:"Release tag, 或 'latest' 代表最新已發布的 release."`
-	Patterns  []string `arg:"" name:"pattern" optional:"" help:"與 asset 名稱比對的 glob pattern; 省略則下載所有 asset."`
-	Dir       string   `short:"d" type:"path" placeholder:"DIR" help:"下載目標目錄; 不存在時自動建立. 預設為當前目錄."`
-	Output    string   `short:"o" placeholder:"NAME" help:"輸出檔名; 僅在下載單一 asset 時有效."`
-	Overwrite bool     `help:"若目標檔案已存在則覆寫."`
+	Repo      string          `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
+	Version   VersionOrLatest `arg:"" name:"version" help:"Release tag, 或 'latest' 代表最新已發布的 release."`
+	Patterns  []string        `arg:"" name:"pattern" optional:"" help:"與 asset 名稱比對的 glob pattern; 省略則下載所有 asset."`
+	Dir       string          `short:"d" type:"path" placeholder:"DIR" help:"下載目標目錄; 不存在時自動建立. 預設為當前目錄."`
+	Output    string          `short:"o" placeholder:"NAME" help:"輸出檔名; 僅在下載單一 asset 時有效."`
+	Overwrite bool            `help:"若目標檔案已存在則覆寫."`
 }
 
 func (c *AssetDownloadCmd) Run(g *Globals) error {
-	return g.client().AssetDownload(c.Repo, c.Version, c.Patterns, c.Dir, c.Output, c.Overwrite)
+	return g.client().AssetDownload(c.Repo, string(c.Version), c.Patterns, c.Dir, c.Output, c.Overwrite)
 }
 
 // newParser 建立綁定至 target 的 kong parser. main 將它綁定至已解析的 CLI;
