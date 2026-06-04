@@ -16,9 +16,9 @@ import (
 
 // Globals 是所有指令共用的旗標, 對應 docs/cli.md 的 "global flags" 與 "authentication" 章節.
 type Globals struct {
-	Source    string `enum:"github,gitlab" required:"" help:"托管平台: github 或 gitlab."`
-	Host      string `placeholder:"URL" help:"自架實例的 base URL; 使用公開站時省略."`
-	Insecure  bool   `help:"略過 TLS 憑證驗證; 僅適用於具有自簽憑證的受信任自架 host."`
+	Source    string `short:"s" enum:"github,gitlab" required:"" help:"托管平台: github 或 gitlab."`
+	Host      string `short:"H" placeholder:"URL" help:"自架實例的 base URL; 使用公開站時省略."`
+	Insecure  bool   `short:"k" help:"略過 TLS 憑證驗證; 僅適用於具有自簽憑證的受信任自架 host."`
 	Token     string `help:"覆寫 token."`
 	TokenFile string `type:"path" placeholder:"PATH" help:"從檔案讀取 token 並覆寫."`
 	User      string `help:"覆寫使用者名稱."`
@@ -85,8 +85,8 @@ type ReleaseCreateCmd struct {
 	Repo     string  `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
 	Version  Version `arg:"" name:"version" help:"Release tag (例如 v1.2.3); tag 不存在時依 --commit 建立."`
 	Note     string  `xor:"note" required:"" help:"Release note 文字."`
-	NoteFile string  `xor:"note" required:"" type:"path" placeholder:"PATH" help:"從檔案讀取 release note (整個檔案即為 note 內容)."`
-	Commit   string  `placeholder:"COMMIT" help:"新 tag 所指向的 commit: 一個 commit SHA, 或 'latest' 代表預設分支的 HEAD. 僅在 tag 尚不存在時必填."`
+	NoteFile string  `short:"n" xor:"note" required:"" type:"path" placeholder:"PATH" help:"從檔案讀取 release note (整個檔案即為 note 內容)."`
+	Commit   string  `short:"c" placeholder:"COMMIT" help:"新 tag 所指向的 commit: 一個 commit SHA, 或 'latest' 代表預設分支的 HEAD. 僅在 tag 尚不存在時必填."`
 }
 
 func (c *ReleaseCreateCmd) Run(g *Globals) error {
