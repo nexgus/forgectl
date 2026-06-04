@@ -99,7 +99,10 @@ mklink
 
 echo
 echo "Built binaries:"
-for f in bin/*; do
+# 只列本次版本的 binary. bin/ 保留各版本舊檔 (檔名含版本號, 不會被覆寫), 故須以 ${VER}
+# 過濾, 否則會把先前版本的殘留也一併印出, 誤以為本次 build 產出了舊版.
+for f in bin/"${BIN}-${VER}"-*; do
+    [ -e "$f" ] || continue
     [ -L "$f" ] && continue
     [ -f "$f" ] && echo "  $(basename "$f")"
 done
