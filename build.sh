@@ -54,8 +54,11 @@ TARGETS=(
     "darwin/arm64"
 )
 
-# build_target 將一個 os/arch 配對編譯至 bin/. forgectl 不需要 cgo,
-# 因此所有目標均以 CGO_ENABLED=0 編譯為靜態、可跨平台的 binary.
+# build_target 將一個 os/arch 配對編譯至 bin/. forgectl 不需要 cgo, 故一律以
+# CGO_ENABLED=0 編譯. Linux 目標因此為完全靜態連結, 不依賴 libc, 可跨發行版執行;
+# Windows 的 PE 不含 C runtime. macOS 為平台限制的例外: Apple 僅允許經由
+# libSystem.B.dylib 進入 syscall, 不支援完全靜態的執行檔, 故 darwin 目標必然動態
+# 連結 libSystem (以及 TLS 會用到的 CoreFoundation / Security 等) 系統函式庫.
 function build_target {
     local os="$1" arch="$2"
     local out="bin/${BIN}-${VER}-${os}-${arch}"
