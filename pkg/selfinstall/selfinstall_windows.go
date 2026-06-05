@@ -15,6 +15,7 @@ import (
 // windowsLayout 描述 Windows 的安裝落點. Windows 沒有預設就在 PATH 的系統 bin 目錄,
 // 故把 vendor 目錄本身加入機器層級 PATH; 穩定入口 forgectl.exe 以 hard link 建在同一
 // 目錄 (同 volume, 不需 symlink 特權). cmd 下輸入 forgectl 會由 PATHEXT 解析為 forgectl.exe.
+// 加入 PATH 的目錄項目須以反斜線結尾才會生效, 見 pathEntryForm.
 type windowsLayout struct {
 	vendorParent string
 	vendorDir    string
@@ -194,39 +195,67 @@ func writeMachinePath(value, regType string) error {
 	return nil
 }
 
-// addToMachinePath 把 dir 加入機器層級 PATH (若尚未存在), 回傳是否實際變更.
+// pathEntryForm 回傳 dir 寫入機器層級 PATH 時應採用的形式. Windows 端此目錄項目須以反斜線
+// 結尾才會生效 (實測: 缺結尾反斜線時, cmd 解析 PATH 找不到此目錄下的 forgectl.exe), 故一律
+// 補上單一結尾反斜線.
+func pathEntryForm(dir string) string {
+	return strings.TrimRight(dir, `\`) + `\`
+}
+
+// samePathEntry 判斷兩個 PATH 項目是否指向同一目錄; 比較時忽略大小寫, 前後空白與結尾反斜線,
+// 使缺結尾反斜線的舊安裝項目仍可被辨識 (供改寫為標準形式或移除).
+func samePathEntry(a, b string) bool {
+	na := strings.TrimRight(strings.TrimSpace(a), `\`)
+	nb := strings.TrimRight(strings.TrimSpace(b), `\`)
+	return strings.EqualFold(na, nb)
+}
+
+// addToMachinePath 把 dir 以標準形式 (見 pathEntryForm) 加入機器層級 PATH; 若已存在但缺結尾
+// 反斜線則改寫為標準形式. 回傳是否實際變更.
 func addToMachinePath(dir string) (bool, error) {
 	value, regType, err := readMachinePath()
 	if err != nil {
 		return false, err
 	}
-	for _, p := range strings.Split(value, ";") {
-		if strings.EqualFold(strings.TrimSpace(p), dir) {
-			return false, nil // 已在 PATH 上.
+	entry := pathEntryForm(dir)
+	parts := strings.Split(value, ";")
+	for i, p := range parts {
+		if !samePathEntry(p, entry) {
+			continue
 		}
+		if strings.TrimSpace(p) == entry {
+			return false, nil // 已是標準形式, 無需變更.
+		}
+		parts[i] = entry // 既有項目缺結尾反斜線, 改寫為標準形式.
+		if err := writeMachinePath(strings.Join(parts, ";"), regType); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 	next := value
 	if next != "" && !strings.HasSuffix(next, ";") {
 		next += ";"
 	}
-	next += dir
+	next += entry
 	if err := writeMachinePath(next, regType); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-// removeFromMachinePath 自機器層級 PATH 移除等於 dir 的項目, 回傳是否實際變更.
+// removeFromMachinePath 自機器層級 PATH 移除指向 dir 的項目 (含缺結尾反斜線的舊形式),
+// 回傳是否實際變更.
 func removeFromMachinePath(dir string) (bool, error) {
 	value, regType, err := readMachinePath()
 	if err != nil {
 		return false, err
 	}
+	entry := pathEntryForm(dir)
 	parts := strings.Split(value, ";")
 	kept := make([]string, 0, len(parts))
 	removed := false
 	for _, p := range parts {
-		if strings.EqualFold(strings.TrimSpace(p), dir) {
+		if samePathEntry(p, entry) {
 			removed = true
 			continue
 		}

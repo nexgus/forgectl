@@ -5,7 +5,7 @@ package version
 import "fmt"
 
 // String is the human-facing application version.
-const String = "0.2.0"
+const String = "0.2.1"
 
 // GitCommitHash, GoVersion, and BuildDate are injected at build time by
 // build.sh through -ldflags. They stay empty when the binary is run directly

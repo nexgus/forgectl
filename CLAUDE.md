@@ -137,6 +137,11 @@ Enterprise) 才是 `{host}/api/v3`.
   不擅改使用者 shell rc** (避免 sudo 下 `$HOME` 變 root 家目錄等坑). Windows 無對應的預設
   系統 bin 目錄, 故把 vendor 目錄加入**機器層級 PATH** (`reg add` 寫
   `HKLM\...\Session Manager\Environment`, 變更需重開終端機生效).
+  - **PATH 項目須以反斜線結尾** (`pathEntryForm`, 見 `selfinstall_windows.go`): 寫入 PATH 的
+    vendor 目錄一律補單一結尾 `\` 才會生效 (實測缺結尾反斜線時, cmd 解析 PATH 找不到該目錄下的
+    `forgectl.exe`); 結尾反斜線只加在 PATH 寫入層, vendorDir 本體 (供 `MkdirAll` / `filepath.Join`)
+    不帶. 去重與移除以 `samePathEntry` 忽略大小寫 / 空白 / 結尾反斜線比對, 故舊版裝下的 "無結尾
+    反斜線" 項目在重裝時會被改寫為標準形式, 解除安裝時也能正確移除.
 - **macOS 專屬**: 清 `com.apple.quarantine` (`xattr -p` 探測再 `-d`, 屬性不存在視為成功),
   否則 Gatekeeper 擋未簽章 binary; **不可用 `/usr/sbin`** (SIP 保護不可寫), 一律 `/usr/local/bin`.
 - **權限**: install / uninstall 皆需提權, 開頭先檢查 (Unix `os.Geteuid()`; Windows
