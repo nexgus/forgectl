@@ -62,6 +62,7 @@ type glLink struct {
 	Name           string `json:"name"`
 	URL            string `json:"url"`
 	DirectAssetURL string `json:"direct_asset_url"`
+	LinkType       string `json:"link_type"`
 }
 
 func (g *gitlabPlatform) projectURL(format string, args ...any) string {
@@ -90,19 +91,31 @@ func (g *gitlabPlatform) listReleases() ([]release, error) {
 			Tag:      r.TagName,
 			Upcoming: &up,
 			Commit:   g.tagCommit(r.TagName),
-			Assets:   g.linkAssets(r.Assets.Links),
+			Assets:   g.linkAssets(r.TagName, r.Assets.Links),
 		})
 	}
 	return out, nil
 }
 
 // linkAssets 將 release 的 asset link 轉換為正規化格式. GitLab 不回報 link 的大小,
-// 因此 Size 維持 nil (見 docs/cli.md).
-func (g *gitlabPlatform) linkAssets(links []glLink) []asset {
+// 因此 Size 維持 nil (見 docs/cli.md). version 為該 release 的 tag, 用來重建下載端點.
+//
+// 下載端點 (ref): 對 link_type=package 的 asset, **不信任 link 存的 url**. GitLab 會把
+// package 類型的 link url / direct_asset_url 正規化成 web permalink
+// (/<repo>/-/package_files/:id/download), 該 web 路由只認瀏覽器 session, 帶 PRIVATE-TOKEN
+// (header 或 query) 一律被 302 導向登入頁; 故改用 (pkgName, version, name) 重建 by-name
+// generic package API URL — 它接受 PRIVATE-TOKEN, 與上傳目的地同一個 URL (見 CLAUDE.md).
+// 非 package 類型 (外部 url) 則沿用 link 的 url.
+func (g *gitlabPlatform) linkAssets(version string, links []glLink) []asset {
 	out := make([]asset, 0, len(links))
 	for _, l := range links {
-		ref := l.URL
-		if ref == "" {
+		var ref string
+		switch {
+		case l.LinkType == "package" && version != "":
+			ref = g.byNameURL(version, l.Name)
+		case l.URL != "":
+			ref = l.URL
+		default:
 			ref = l.DirectAssetURL
 		}
 		out = append(out, asset{Name: l.Name, URL: l.URL, ref: ref})
@@ -402,7 +415,8 @@ func (g *gitlabPlatform) findReleaseAssets(version string) ([]asset, error) {
 			return nil, fmt.Errorf("解析 release 回應: %w", err)
 		}
 	}
-	return g.linkAssets(rel.Assets.Links), nil
+	// 以 rel.TagName 作為 generic package 版本 ("latest" 時 version 參數本身非實際 tag).
+	return g.linkAssets(rel.TagName, rel.Assets.Links), nil
 }
 
 // latestRelease 回傳最新的非 upcoming release. GitLab 以最新在前的順序列出 release;

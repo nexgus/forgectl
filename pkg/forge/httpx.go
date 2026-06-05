@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"strings"
 )
 
 // newHTTPClient 建立 release / asset 指令共用的 HTTP client. 處理 --insecure
@@ -112,8 +114,34 @@ func (ac apiCaller) getStream(url string, headers map[string]string, w io.Writer
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return statusError("GET "+url, resp.StatusCode, body)
 	}
+	// 2xx 但最終落在登入頁: 認證失敗 (token 缺失/失效或權限不足) 時, 伺服器常把下載
+	// 請求重導至登入頁再回 200 HTML, 否則整頁登入 HTML 會被當成 asset 寫進檔案.
+	// asset 可為任意格式 (含 HTML), 故不以內容格式判定; 而是看「跟隨重導後是否落在
+	// 登入頁」這個與 asset 內容無關的特徵 — 正常下載端點不會從登入頁供檔.
+	if isLoginPage(resp.Request.URL.Path) && looksLikeHTML(resp.Header.Get("Content-Type")) {
+		return fmt.Errorf("下載被重導至登入頁 (%s); 多為認證失敗: token 缺失/失效或權限不足", resp.Request.URL)
+	}
 	_, err = io.Copy(w, resp.Body)
 	return err
+}
+
+// isLoginPage 依路徑判斷是否為平台的登入頁: GitLab 為 /users/sign_in,
+// GitHub 為 /login 或 /session (含自架站於子路徑下的情形).
+func isLoginPage(path string) bool {
+	p := strings.ToLower(path)
+	return strings.Contains(p, "/users/sign_in") ||
+		strings.HasSuffix(p, "/login") ||
+		strings.HasSuffix(p, "/session")
+}
+
+// looksLikeHTML 回報 Content-Type 是否為 HTML 頁面. 僅用來與 isLoginPage 搭配,
+// 確認登入頁回應; 不單獨作為「不是 asset」的判據 (合法 asset 可以是 HTML).
+func looksLikeHTML(contentType string) bool {
+	mt, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	return mt == "text/html" || mt == "application/xhtml+xml"
 }
 
 // paginate 依序取得各頁, 直到某頁回傳的項目數少於 perPage (即最後一頁).

@@ -214,3 +214,80 @@ func TestGitLabDownload(t *testing.T) {
 		t.Errorf("downloaded %q, want xyz", buf.String())
 	}
 }
+
+// TestGitLabDownloadLoginRedirect 模擬認證失敗時下載被重導至登入頁的情形:
+// 應回報錯誤, 而非把整頁登入 HTML 當成 asset 寫出.
+func TestGitLabDownloadLoginRedirect(t *testing.T) {
+	t.Parallel()
+	g := glServer(t, map[string]http.HandlerFunc{
+		"/api/v4/projects/o/r/releases/v1": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"tag_name":"v1","assets":{"links":[{"name":"app","url":"http://`+r.Host+`/dl/app"}]}}`)
+		},
+		"/dl/app": func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/users/sign_in", http.StatusFound)
+		},
+		"/users/sign_in": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			io.WriteString(w, "<!DOCTYPE html><title>Sign in · GitLab</title>")
+		},
+	})
+
+	assets, err := g.findReleaseAssets("v1")
+	if err != nil {
+		t.Fatalf("findReleaseAssets: %v", err)
+	}
+	var buf bytes.Buffer
+	err = g.download(assets[0], &buf)
+	if err == nil {
+		t.Fatalf("download succeeded, want login-redirect error; wrote %q", buf.String())
+	}
+	if !strings.Contains(err.Error(), "登入頁") {
+		t.Errorf("error = %v, want mention of 登入頁", err)
+	}
+}
+
+// TestGitLabDownloadPackageLink 重現實際情境: GitLab 把 link_type=package 的 url
+// 正規化成 web permalink (/-/package_files/:id/download), 該路由帶 token 仍導向登入頁.
+// 下載應改打 by-name generic package API 端點 (接受 PRIVATE-TOKEN), 取得真正的檔案.
+func TestGitLabDownloadPackageLink(t *testing.T) {
+	t.Parallel()
+	g := glServer(t, map[string]http.HandlerFunc{
+		"/api/v4/projects/o/r/releases/v1": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"tag_name":"v1","assets":{"links":[{
+				"name":"app.whl","link_type":"package",
+				"url":"http://`+r.Host+`/o/r/-/package_files/67/download",
+				"direct_asset_url":"http://`+r.Host+`/o/r/-/package_files/67/download"}]}}`)
+		},
+		// web permalink: forgectl 若誤用此路由將取得登入頁 (測試會因此失敗).
+		"/o/r/-/package_files/67/download": func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/users/sign_in", http.StatusFound)
+		},
+		"/users/sign_in": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			io.WriteString(w, "<!DOCTYPE html><title>Sign in</title>")
+		},
+		// by-name generic package API 端點: pkgName=r (repo base), version=tag, name=檔名.
+		"/api/v4/projects/o/r/packages/generic/r/v1/app.whl": func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("PRIVATE-TOKEN") != "tok" {
+				t.Errorf("API download missing token, headers: %v", r.Header)
+			}
+			w.Header().Set("Content-Type", "application/octet-stream")
+			io.WriteString(w, "PK\x03\x04realwheel")
+		},
+	})
+
+	assets, err := g.findReleaseAssets("v1")
+	if err != nil {
+		t.Fatalf("findReleaseAssets: %v", err)
+	}
+	if len(assets) != 1 {
+		t.Fatalf("assets = %+v, want one", assets)
+	}
+	var buf bytes.Buffer
+	if err := g.download(assets[0], &buf); err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if buf.String() != "PK\x03\x04realwheel" {
+		t.Errorf("downloaded %q, want real wheel bytes (did it hit the web permalink?)", buf.String())
+	}
+}

@@ -119,3 +119,24 @@ Enterprise) 才是 `{host}/api/v3`.
   - `release create` / `asset upload` 用 `Version` (嚴格 semver); `asset download` 用
     `VersionOrLatest`, 額外接受特殊值 `latest`. 直接以結構建構並呼叫 `Run` 的測試 (不經
     kong 解析) 不觸發此守門, 不受影響.
+- **GitLab package link 下載一律重建 by-name API URL** (`linkAssets`, 見 `pkg/forge/gitlab.go`):
+  GitLab 會把 `link_type=package` 的 asset link `url` / `direct_asset_url` 正規化成 **web
+  permalink** `/<repo>/-/package_files/:id/download`. 該 web 路由只認瀏覽器 session,
+  帶 `PRIVATE-TOKEN` (header 或 `?private_token=` query 皆然) 一律被 `302` 導向
+  `/users/sign_in`, 於是整頁登入 HTML 被當成 asset 存出 (實測症狀: 下載到的 `.whl` 其實是
+  登入頁, `pip install` 報 `Wheel ... is invalid`). 故下載 **不信任 link 存的 url**: 對
+  `link_type=package` 的 asset, 以 `(pkgName, version=tag, name)` 重建 by-name generic
+  package API URL (`byNameURL`, 與上傳目的地同一個 URL) 下載 — 它接受 `PRIVATE-TOKEN`,
+  回 `application/octet-stream`. 非 package 類型 (外部 url) 才沿用 link 的 url.
+  - 這也修正 forgectl 自身 upload→download 來回流程的問題: `createLink` 雖存 API URL,
+    GitLab 仍會將其改寫成 `/-/package_files/:id/download`, 故不重建即觸發同一問題.
+  - 前提假設: generic package name = repo 末段 (`g.pkgName`), package version = release tag —
+    與 upload 端一致 (CLAUDE.md 跨平台模型). 不成立時 API 端點回 404 明確報錯, 而非默默存下
+    損壞的檔案.
+- **下載登入頁守門** (`getStream`, 見 `pkg/forge/httpx.go`): 上一點為正解, 此為縱深防禦 —
+  若仍有下載落入登入頁 (其他 link 類型或別種認證失敗), 在串流寫出前, 若**跟隨重導後的
+  最終網址落在登入頁** (GitLab `/users/sign_in`, GitHub `/login` / `/session`) **且**回應為
+  HTML, 即報錯, 而非將登入頁 HTML 默默寫出檔案.
+  - **刻意不檢查 asset 的內容格式 / magic number**: asset 可為任意格式 (含合法的 HTML 檔),
+    以格式判定會誤殺. 改用「最終網址是否為登入頁」這個與 asset 內容無關的特徵; HTML
+    Content-Type 僅作搭配條件, 不單獨作為判據. 正常下載端點不會從登入頁供檔, 故不誤殺.
