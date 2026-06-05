@@ -4,7 +4,8 @@
 asset. 目前規劃支援 **github**, **gitlab** 兩種 source.
 
 採 noun-verb 兩層結構, 目前有 `release` 與 `asset` 兩個 noun; 另有一個獨立的診斷指令
-`ping` (無 noun-verb, 不接受 `<repo>`), 用來驗證連線與認證設定.
+`ping` (無 noun-verb, 不接受 `<repo>`), 用來驗證連線與認證設定. 此外有一個 `self` noun,
+對 forgectl 自身做安裝 / 移除, 只操作本機, 不涉及任何託管平台.
 
 ## 命令一覽
 
@@ -15,6 +16,10 @@ forgectl release list     <repo> [--json]
 forgectl release create   <repo> <version> (--note STR | --note-file PATH) [--commit COMMIT]
 forgectl asset   upload    <repo> <version> <path>[=NAME]...
 forgectl asset   download  <repo> <version> [pattern]...      [-d DIR] [-o NAME] [--overwrite]
+
+# self 指令不需 --source (只操作本機 forgectl)
+forgectl self    install                                      # 安裝到系統, 建立 forgectl 入口
+forgectl self    uninstall                                    # 移除已安裝的 forgectl 與入口
 ```
 
 `<repo>` 只是 **owner/repo 路徑**; 平台與 host 由全域旗標 `--source` / `--host` 決定.
@@ -332,6 +337,55 @@ forgectl asset download hello/hgsystem latest checksums.txt -d ./dl/ -o sums.txt
 - 私有 repo 需 token (見 §認證).
 - 退出碼: 成功 (**含 "pattern 無命中"**) 為 0; release 不存在, 目標檔已存在又未給
   `--overwrite`, 認證失敗等才為非 0.
+
+---
+
+# self
+
+對 forgectl 自身做安裝與移除, 讓下載的 `forgectl-<版本>-<os>-<arch>[.exe]` 能在任何位置
+以 `forgectl` 直接執行. **只操作本機檔案系統與 PATH, 不連線任何平台, 不需 `--source` 或
+認證旗標.**
+
+## 語法
+
+```
+forgectl self install
+forgectl self uninstall
+```
+
+## 行為
+
+把版本檔放進一個 vendor 目錄累積保存, 再以一個穩定名稱 `forgectl` 指向最新一次安裝的
+版本檔, 並確保該入口在 PATH 上. 落點與連結方式依平台不同:
+
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| vendor 目錄 | `/opt/augustus.sanchung/forgectl/` | 同 Linux | `%ProgramFiles%\augustus.sanchung\forgectl\` |
+| 穩定入口 | symlink `/usr/local/bin/forgectl` | 同 Linux | hard link `forgectl.exe` (建在 vendor 目錄內) |
+| 入口上 PATH 的方式 | `/usr/local/bin` 預設即在 PATH | 同 Linux | 把 vendor 目錄加入機器層級 PATH |
+| 所需權限 | root (sudo) | root (sudo) | 系統管理員 (UAC) |
+
+- **install** 依序: (1) 確保 vendor 目錄存在; (2) 把目前執行檔複製進 vendor 目錄, 落點檔名
+  固定為 `forgectl-<版本>-<os>-<arch>[.exe]` (與 build.sh 產物一致, 不取執行檔當下的磁碟檔名,
+  故經 symlink / hard link 執行或下載檔被改名都不影響; 改版多次即累積多個版本檔); (3) macOS
+  另清除 `com.apple.quarantine` 隔離屬性;
+  (4) 既有入口先移除 (是連結則一併顯示其指向); (5) 建立指向本次版本檔的入口; (6) 確認入口
+  在 PATH 上 (Linux / macOS 不在則僅警告, 不擅改 shell 設定; Windows 自動加入機器 PATH).
+- **uninstall** 依序: (1) 刪除整個 vendor 目錄 (含全部累積的版本檔); (2) 其上的命名空間層
+  (`augustus.sanchung`) **僅在已空時**收掉, 永不刪除再上層 (`/opt` 或 `Program Files`);
+  (3) 移除入口 (Linux / macOS 僅移除確實指向本工具 vendor 目錄的 symlink; Windows 自機器
+  PATH 移除 vendor 目錄).
+
+## 注意事項
+
+- **連結方式依平台分開挑**: Linux / macOS 用 symlink (可跨檔案系統, 因入口與 vendor 可能
+  分屬不同掛載點); Windows 用 hard link (穩定入口與版本檔同處 vendor 目錄, 必同 volume,
+  且不需 symlink 特權). 兩者皆可在 cmd / shell 下以 `forgectl` 直接執行.
+- **macOS 不使用 `/usr/sbin`** (受 SIP 保護不可寫), 一律落在 `/usr/local/bin`.
+- **改版即累積**: install 不刪舊版本檔, 入口永遠指向最新一次安裝者; 舊檔可自行清理.
+- **退出碼**: install 任一步失敗即中止並以非 0 退出. uninstall 個別步驟失敗只印警告
+  **不中止**, 繼續後續步驟, 但期間有任何錯誤 (含為求安全保留的外來入口) 最終仍以非 0 退出.
+- **Windows PATH 變更於新終端機生效**: 機器層級 PATH 更新後, 已開啟的終端機需重開才生效.
 
 ---
 

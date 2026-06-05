@@ -104,6 +104,50 @@ Enterprise) 才是 `{host}/api/v3`.
   避免祕密外洩到終端機或日誌.
 - credential 檔權限可被他人讀取時印警告至 stderr; `--insecure` 亦印警告.
 
+## self install / uninstall (本機安裝)
+
+`self` 是 "對 forgectl 自身操作" 的命令群, 把下載的 `forgectl-<版本>-<os>-<arch>[.exe]`
+安裝成可在任何位置以 `forgectl` 執行 (使用者導向語法見 `docs/cli.md` 的 self 章節). 它**只
+碰本機檔案系統與 PATH, 與 GitHub / GitLab 無關**, 故實作獨立於 `pkg/forge` 之外, 收在
+`pkg/selfinstall/`, 以 build tag 分平台 (`selfinstall_unix.go` / `selfinstall_windows.go`,
+共用層在 `selfinstall.go`, macOS 隔離屬性在 `quarantine_darwin.go` / 其他平台 no-op).
+
+- **命名空間 + 累積模型**: vendor 目錄為 `<root>/augustus.sanchung/forgectl/`
+  (`root` = `/opt` 或 `%ProgramFiles%`). install 把自己複製進去, 故改版多次會累積多個版本檔;
+  穩定入口 `forgectl` 永遠指向**本次**安裝的版本檔. uninstall 刪整個 `.../forgectl/`, 其上的
+  `augustus.sanchung` 層**僅在已空時**收掉 (可能與其他工具共用), **永不刪 `/opt` 或
+  `Program Files`**.
+- **落點檔名由編譯期事實構造, 不信任磁碟檔名** (`canonicalName`, 見 `selfinstall.go`): 落點名
+  固定為 `forgectl-<version.String>-<GOOS>-<GOARCH>[.exe]`, 與 `build.sh` 產物逐字一致, **不取
+  `os.Executable()` 的 basename**. 否則經由已安裝入口重跑時, basename 會是入口名而非版本名:
+  symlink (Linux / macOS) 雖可用 `EvalSymlinks` 跟隨回版本檔, 但 **hard link (Windows) 沒有可
+  跟隨的目標** (它本身就是該 inode 的對等檔名, `forgectl.exe` 已經 "是檔案", 名字卻不對), 故
+  "follow link 直到是檔案" 對 hard link 無效. 改以編譯期事實構造名稱, 一併解決 symlink /
+  hard link 執行與使用者改名下載檔三種情形; `os.Executable()` 仍用來取**複製來源的位元組**
+  (它定義上就是正在執行的 forgectl, 版本 / 平台 / 架構無從造假).
+- **連結方式刻意依平台分開挑** (使用者只要求 "cmd 下能跑 `forgectl`", 兩者皆滿足):
+  - **Linux / macOS = symlink** `/usr/local/bin/forgectl` → vendor 內版本檔. 用 symlink 是
+    因入口 (`/usr/local/bin`) 與 vendor (`/opt`) 可能分屬不同掛載點, hard link 會踩
+    `EXDEV` (cross-device link). uninstall 只移除**確實指向本工具 vendor 目錄**的 symlink
+    (`os.Readlink` + 前綴比對), 避免誤刪同名的他人安裝; 是一般檔或指向別處則保留並警告.
+  - **Windows = hard link** `forgectl.exe` → 同目錄版本檔 (皆在 vendor 目錄內). 同目錄必同
+    volume, hard link 成立且免 symlink 特權; cmd 打 `forgectl` 由 PATHEXT 解析 `forgectl.exe`.
+- **入口上 PATH 的方式**: Linux / macOS 靠 `/usr/local/bin` 預設即在 PATH, 故不在時**只警告,
+  不擅改使用者 shell rc** (避免 sudo 下 `$HOME` 變 root 家目錄等坑). Windows 無對應的預設
+  系統 bin 目錄, 故把 vendor 目錄加入**機器層級 PATH** (`reg add` 寫
+  `HKLM\...\Session Manager\Environment`, 變更需重開終端機生效).
+- **macOS 專屬**: 清 `com.apple.quarantine` (`xattr -p` 探測再 `-d`, 屬性不存在視為成功),
+  否則 Gatekeeper 擋未簽章 binary; **不可用 `/usr/sbin`** (SIP 保護不可寫), 一律 `/usr/local/bin`.
+- **權限**: install / uninstall 皆需提權, 開頭先檢查 (Unix `os.Geteuid()`; Windows
+  `shell32!IsUserAnAdmin`), 不足即提早報錯. Windows 端**不引入新依賴**: PATH 走 `reg`,
+  admin 檢查走 `syscall` lazy DLL, hard link 走 `os.Link`.
+- **退出碼**: install 任一步失敗即中止回非 0; uninstall 個別失敗只警告不中止, 期間有錯
+  (含保留外來入口) 最終回非 0 - 與其他指令的彙總式退出一致.
+- **`--source` 的豁免**: `Source` 旗標原以 kong `enum` + `required` 守門, 會連 self 也強制
+  要求 `--source`. 改為移除該兩個 tag, 在 root 的 `Validate(kctx *kong.Context)` 手動驗證:
+  非 self 指令才要求 `--source` 為 github 或 gitlab, self 指令 (及無選定指令) 豁免. 直接以
+  結構建構並呼叫 `Run` 的測試不經 kong 解析, 不觸發此驗證, 不受影響.
+
 ## 實作決策
 
 - **credential 檔解析套件** (隨 `ping` 實作確定): TOML = `github.com/BurntSushi/toml`,

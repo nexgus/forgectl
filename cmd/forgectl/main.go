@@ -6,17 +6,20 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/alecthomas/kong"
 
 	"forgectl/pkg/forge"
+	"forgectl/pkg/selfinstall"
 	"forgectl/pkg/version"
 )
 
 // Globals 是所有指令共用的旗標, 對應 docs/cli.md 的 "global flags" 與 "authentication" 章節.
 type Globals struct {
-	Source    string `short:"s" enum:"github,gitlab" required:"" help:"托管平台: github 或 gitlab."`
+	Source    string `short:"s" help:"托管平台: github 或 gitlab (self 指令不需要)."`
 	Host      string `short:"H" placeholder:"URL" help:"自架實例的 base URL; 使用公開站時省略."`
 	Insecure  bool   `short:"k" help:"略過 TLS 憑證驗證; 僅適用於具有自簽憑證的受信任自架 host."`
 	Token     string `help:"覆寫 token."`
@@ -46,6 +49,25 @@ type CLI struct {
 	Ping    PingCmd    `cmd:"" help:"驗證遠端設定 (host, TLS 及 credential) 是否正確."`
 	Release ReleaseCmd `cmd:"" help:"查詢與管理 release."`
 	Asset   AssetCmd   `cmd:"" help:"上傳與下載 asset."`
+	Self    SelfCmd    `cmd:"" help:"安裝或移除 forgectl 自身 (僅操作本機, 不涉及遠端平台, 不需 --source)."`
+}
+
+// Validate 在解析階段強制非 self 的指令必須帶合法 --source, 但豁免 self 指令 (它只操作
+// 本機 forgectl, 與託管平台無關). 此處以手動驗證取代 Source 旗標原本的 enum + required:
+// 後者會把 --source 一併強制套用到 self, 而 self 與 source 無關.
+func (c *CLI) Validate(kctx *kong.Context) error {
+	cmd := kctx.Command()
+	if cmd == "" || cmd == "self" || strings.HasPrefix(cmd, "self ") {
+		return nil
+	}
+	switch c.Source {
+	case "github", "gitlab":
+		return nil
+	case "":
+		return fmt.Errorf("--source is required")
+	default:
+		return fmt.Errorf("--source must be %q or %q, got %q", "github", "gitlab", c.Source)
+	}
 }
 
 // PingCmd 實作: forgectl ping
@@ -68,6 +90,22 @@ type AssetCmd struct {
 	Upload   AssetUploadCmd   `cmd:"" help:"將一或多個本地檔案以 asset 形式上傳至某版本."`
 	Download AssetDownloadCmd `cmd:"" help:"下載 release 的 asset, 可選擇以 glob 篩選."`
 }
+
+// SelfCmd 彙整 "self" 子指令: 對 forgectl 自身 (而非遠端 repo) 操作, 不需任何全域旗標.
+type SelfCmd struct {
+	Install   SelfInstallCmd   `cmd:"" help:"將 forgectl 安裝到系統, 建立可在任何位置執行的 forgectl 入口."`
+	Uninstall SelfUninstallCmd `cmd:"" help:"移除已安裝的 forgectl 及其入口."`
+}
+
+// SelfInstallCmd 實作: forgectl self install
+type SelfInstallCmd struct{}
+
+func (c *SelfInstallCmd) Run() error { return selfinstall.Install(os.Stdout) }
+
+// SelfUninstallCmd 實作: forgectl self uninstall
+type SelfUninstallCmd struct{}
+
+func (c *SelfUninstallCmd) Run() error { return selfinstall.Uninstall(os.Stdout) }
 
 // ReleaseListCmd 實作: forgectl release list <repo> [--json]
 type ReleaseListCmd struct {

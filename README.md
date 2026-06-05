@@ -37,6 +37,17 @@ cd forgectl
 go build -o forgectl .
 ```
 
+若是直接取得預先建置的 `forgectl-<版本>-<os>-<arch>[.exe]`, 可用內建的 `self install`
+安裝到系統 (建立可在任何位置執行的 `forgectl` 入口; 不需 `--source`, 細節見
+[`docs/cli.md`](docs/cli.md) 的 self 章節):
+
+```bash
+# Linux / macOS 需 root; Windows 需系統管理員
+sudo ./forgectl-1.2.3-linux-amd64 self install
+forgectl --help          # 之後即可於任何位置以 forgectl 執行
+sudo forgectl self uninstall
+```
+
 或直接安裝至 `$GOBIN`:
 
 ```bash
@@ -93,6 +104,8 @@ forgectl release list     <repo> [--json]
 forgectl release create   <repo> <version> (--note STR | --note-file PATH) [--commit COMMIT]
 forgectl asset   upload   <repo> <version> <path>[=NAME]...
 forgectl asset   download <repo> <version> [pattern]... [-d DIR] [-o NAME] [--overwrite]
+forgectl self    install                                 # 安裝本機 forgectl, 不需 --source
+forgectl self    uninstall
 ```
 
 ### 驗證設定

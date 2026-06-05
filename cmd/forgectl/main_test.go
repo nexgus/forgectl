@@ -72,6 +72,24 @@ func TestPing(t *testing.T) {
 	})
 }
 
+// TestSelfNoSourceRequired 固定 self 指令豁免 --source: 它只操作本機 forgectl, 與
+// 託管平台無關, 故不帶 --source 也應解析成功.
+func TestSelfNoSourceRequired(t *testing.T) {
+	t.Parallel()
+	for _, sub := range []string{"install", "uninstall"} {
+		t.Run(sub, func(t *testing.T) {
+			t.Parallel()
+			_, ctx, err := parse(t, "self", sub)
+			if err != nil {
+				t.Fatalf("parse self %s: %v", sub, err)
+			}
+			if got, want := ctx.Command(), "self "+sub; got != want {
+				t.Errorf("Command() = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestSourceValidation(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
