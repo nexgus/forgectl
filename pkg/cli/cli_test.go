@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"net/http"
@@ -200,10 +200,10 @@ func TestRunDispatch(t *testing.T) {
 	g := &Globals{Source: "github", Host: dead, Token: "x"}
 	missing := filepath.Join(t.TempDir(), "nope.bin")
 	runs := map[string]func() error{
-		"release list":   func() error { return (&ReleaseListCmd{Repo: "o/r"}).Run(g) },
-		"release create": func() error { return (&ReleaseCreateCmd{Repo: "o/r", Version: "v1", Note: "n"}).Run(g) },
-		"asset upload":   func() error { return (&AssetUploadCmd{Repo: "o/r", Version: "v1", Paths: []string{missing}}).Run(g) },
-		"asset download": func() error { return (&AssetDownloadCmd{Repo: "o/r", Version: "v1"}).Run(g) },
+		"release list":   func() error { return (&releaseListCmd{Repo: "o/r"}).Run(g) },
+		"release create": func() error { return (&releaseCreateCmd{Repo: "o/r", Version: "v1", Note: "n"}).Run(g) },
+		"asset upload":   func() error { return (&assetUploadCmd{Repo: "o/r", Version: "v1", Paths: []string{missing}}).Run(g) },
+		"asset download": func() error { return (&assetDownloadCmd{Repo: "o/r", Version: "v1"}).Run(g) },
 	}
 	for name, run := range runs {
 		if err := run(); err == nil {

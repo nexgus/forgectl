@@ -1,0 +1,188 @@
+// Package cli 定義 forgectl 的命令列介面 (docs/cli.md 描述的名詞-動詞語法),
+// 並透過 kong 的 Run 方法分派執行. 每個指令的 Run 從全域旗標建立 pkg/forge client,
+// 再把指令本身的欄位傳給它; 實際工作在 pkg/forge 內完成, 它只接受傳入的參數,
+// 不讀取任何全域狀態.
+//
+// cmd/forgectl 僅是薄進入點, 把 os.Args 交給本套件的 Run.
+package cli
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/alecthomas/kong"
+
+	"forgectl/pkg/forge"
+	"forgectl/pkg/selfinstall"
+	"forgectl/pkg/version"
+)
+
+// Globals 是所有指令共用的旗標, 對應 docs/cli.md 的 "global flags" 與 "authentication" 章節.
+type Globals struct {
+	Source    string `short:"s" help:"托管平台: github 或 gitlab (self 指令不需要)."`
+	Host      string `short:"H" placeholder:"URL" help:"自架實例的 base URL; 使用公開站時省略."`
+	Insecure  bool   `short:"k" help:"略過 TLS 憑證驗證; 僅適用於具有自簽憑證的受信任自架 host."`
+	Token     string `help:"覆寫 token."`
+	TokenFile string `type:"path" placeholder:"PATH" help:"從檔案讀取 token 並覆寫."`
+	User      string `help:"覆寫使用者名稱."`
+
+	Version kong.VersionFlag `short:"V" help:"印出版本資訊後離開."`
+}
+
+// client 從全域旗標建立 forge client. 每個 Run 方法都呼叫它,
+// 使 forge 不依賴任何 CLI 型別, 也不讀取共用狀態.
+func (g *Globals) client() *forge.Client {
+	return forge.New(forge.Config{
+		Source:    g.Source,
+		Host:      g.Host,
+		Insecure:  g.Insecure,
+		Token:     g.Token,
+		TokenFile: g.TokenFile,
+		User:      g.User,
+	})
+}
+
+// CLI 是指令樹的根節點.
+type CLI struct {
+	Globals
+
+	Ping    pingCmd    `cmd:"" help:"驗證遠端設定 (host, TLS 及 credential) 是否正確."`
+	Release releaseCmd `cmd:"" help:"查詢與管理 release."`
+	Asset   assetCmd   `cmd:"" help:"上傳與下載 asset."`
+	Self    selfCmd    `cmd:"" help:"安裝或移除 forgectl 自身 (僅操作本機, 不涉及遠端平台, 不需 --source)."`
+}
+
+// Validate 在解析階段強制非 self 的指令必須帶合法 --source, 但豁免 self 指令 (它只操作
+// 本機 forgectl, 與託管平台無關). 此處以手動驗證取代 Source 旗標原本的 enum + required:
+// 後者會把 --source 一併強制套用到 self, 而 self 與 source 無關.
+func (c *CLI) Validate(kctx *kong.Context) error {
+	cmd := kctx.Command()
+	if cmd == "" || cmd == "self" || strings.HasPrefix(cmd, "self ") {
+		return nil
+	}
+	switch c.Source {
+	case "github", "gitlab":
+		return nil
+	case "":
+		return fmt.Errorf("--source is required")
+	default:
+		return fmt.Errorf("--source must be %q or %q, got %q", "github", "gitlab", c.Source)
+	}
+}
+
+// pingCmd 實作: forgectl ping
+//
+// 不接受位置參數: ping 驗證連線與 credential (全域旗標), 而非特定 repo.
+type pingCmd struct{}
+
+func (c *pingCmd) Run(g *Globals) error {
+	return g.client().Ping()
+}
+
+// releaseCmd 彙整 "release" 子指令.
+type releaseCmd struct {
+	List   releaseListCmd   `cmd:"" help:"列出 repo 的所有 release."`
+	Create releaseCreateCmd `cmd:"" help:"為某個版本發布 release, 並掛載已上傳的 asset."`
+}
+
+// assetCmd 彙整 "asset" 子指令.
+type assetCmd struct {
+	Upload   assetUploadCmd   `cmd:"" help:"將一或多個本地檔案以 asset 形式上傳至某版本."`
+	Download assetDownloadCmd `cmd:"" help:"下載 release 的 asset, 可選擇以 glob 篩選."`
+}
+
+// selfCmd 彙整 "self" 子指令: 對 forgectl 自身 (而非遠端 repo) 操作, 不需任何全域旗標.
+type selfCmd struct {
+	Install   selfInstallCmd   `cmd:"" help:"將 forgectl 安裝到系統, 建立可在任何位置執行的 forgectl 入口."`
+	Uninstall selfUninstallCmd `cmd:"" help:"移除已安裝的 forgectl 及其入口."`
+}
+
+// selfInstallCmd 實作: forgectl self install
+type selfInstallCmd struct{}
+
+func (c *selfInstallCmd) Run() error { return selfinstall.Install(os.Stdout) }
+
+// selfUninstallCmd 實作: forgectl self uninstall
+type selfUninstallCmd struct{}
+
+func (c *selfUninstallCmd) Run() error { return selfinstall.Uninstall(os.Stdout) }
+
+// releaseListCmd 實作: forgectl release list <repo> [--json]
+type releaseListCmd struct {
+	Repo string `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
+	JSON bool   `help:"輸出 JSON 供程式處理, 而非人類可讀的文字格式."`
+}
+
+func (c *releaseListCmd) Run(g *Globals) error {
+	return g.client().ReleaseList(c.Repo, c.JSON)
+}
+
+// releaseCreateCmd 實作:
+// forgectl release create <repo> <version> (--note STR | --note-file PATH) [--commit COMMIT]
+type releaseCreateCmd struct {
+	Repo     string          `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
+	Version  version.Version `arg:"" name:"version" help:"Release tag (例如 v1.2.3); tag 不存在時依 --commit 建立."`
+	Note     string          `xor:"note" required:"" help:"Release note 文字."`
+	NoteFile string          `short:"n" xor:"note" required:"" type:"path" placeholder:"PATH" help:"從檔案讀取 release note (整個檔案即為 note 內容)."`
+	Commit   string          `short:"c" placeholder:"COMMIT" help:"新 tag 所指向的 commit: 一個 commit SHA, 或 'latest' 代表預設分支的 HEAD. 僅在 tag 尚不存在時必填."`
+}
+
+func (c *releaseCreateCmd) Run(g *Globals) error {
+	return g.client().ReleaseCreate(c.Repo, string(c.Version), c.Note, c.NoteFile, c.Commit)
+}
+
+// assetUploadCmd 實作: forgectl asset upload <repo> <version> <path>[=NAME]...
+type assetUploadCmd struct {
+	Repo    string          `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
+	Version version.Version `arg:"" name:"version" help:"版本字串; release 不需預先存在."`
+	Paths   []string        `arg:"" name:"path" help:"一或多個本地檔案, 每個可加上 =NAME 後綴以重新命名上傳的 asset."`
+}
+
+func (c *assetUploadCmd) Run(g *Globals) error {
+	return g.client().AssetUpload(c.Repo, string(c.Version), c.Paths)
+}
+
+// assetDownloadCmd 實作:
+// forgectl asset download <repo> <version> [pattern]... [-d DIR] [-o NAME] [--overwrite]
+type assetDownloadCmd struct {
+	Repo      string                  `arg:"" name:"repo" help:"目標 repo, 格式為 owner/repo."`
+	Version   version.VersionOrLatest `arg:"" name:"version" help:"Release tag, 或 'latest' 代表最新已發布的 release."`
+	Patterns  []string                `arg:"" name:"pattern" optional:"" help:"與 asset 名稱比對的 glob pattern; 省略則下載所有 asset."`
+	Dir       string                  `short:"d" type:"path" placeholder:"DIR" help:"下載目標目錄; 不存在時自動建立. 預設為當前目錄."`
+	Output    string                  `short:"o" placeholder:"NAME" help:"輸出檔名; 僅在下載單一 asset 時有效."`
+	Overwrite bool                    `help:"若目標檔案已存在則覆寫."`
+}
+
+func (c *assetDownloadCmd) Run(g *Globals) error {
+	return g.client().AssetDownload(c.Repo, string(c.Version), c.Patterns, c.Dir, c.Output, c.Overwrite)
+}
+
+// newParser 建立綁定至 target 的 kong parser. Run 將它綁定至已解析的 CLI;
+// 測試則綁定至全新的 CLI, 以隔離測試語法.
+func newParser(target *CLI) (*kong.Kong, error) {
+	return kong.New(
+		target,
+		kong.Name("forgectl"),
+		kong.Description("透過 GitHub 與 GitLab 查詢與操作 release 和 asset."),
+		kong.UsageOnError(),
+		kong.Vars{"version": version.Full()},
+	)
+}
+
+// Run 解析命令列引數並分派至所選指令, 回傳給作業系統的結束碼.
+// 解析或執行失敗時, 沿用 kong 的 FatalIfErrorf (印出錯誤, UsageOnError 時附上用法)
+// 並直接結束行程; 正常完成時回傳 0.
+func Run(args []string) int {
+	var cli CLI
+	parser, err := newParser(&cli)
+	if err != nil {
+		panic(err)
+	}
+	ctx, err := parser.Parse(args)
+	parser.FatalIfErrorf(err)
+
+	// kong 分派至所選指令的 Run 方法, 並注入其所需的全域旗標.
+	ctx.FatalIfErrorf(ctx.Run(&cli.Globals))
+	return 0
+}

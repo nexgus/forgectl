@@ -1,7 +1,8 @@
 # forgectl — 專案說明 (CLAUDE.md)
 
 `forgectl` 是一支 Go CLI, 透過 GitHub / GitLab 的 REST API 查詢與操作 repo 的 release
-與 asset. CLI 骨架 (kong 解析 + dispatch, 見 `cmd/forgectl`) 與全部指令皆已實作:
+與 asset. CLI 骨架 (kong 解析 + dispatch 與全部指令的宣告, 見 `pkg/cli`; `cmd/forgectl`
+僅是把 `os.Args` 交給 `cli.Run` 的薄進入點) 與全部指令皆已實作:
 `ping` (連線與 credential 解析), `release list` / `release create`, `asset upload` /
 `asset download`. 設計文件在 `docs/`.
 
