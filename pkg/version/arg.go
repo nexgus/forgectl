@@ -1,4 +1,4 @@
-package main
+package version
 
 // 本檔為 <version> 位置參數提供 semver 守門. release create / asset upload /
 // asset download 都以版本字串為 join key, 漏填時後面的 <path> / <pattern> 會被當成
@@ -18,7 +18,7 @@ const latestArg = "latest"
 
 // isSemver 回報 s 是否為合法的版本字串. 驗證委由 golang.org/x/mod/semver, 它要求
 // 前綴 "v"; 為同時接受帶與不帶 "v" 的寫法 (例如 v1.2.3 與 1.2.3), 缺前綴時先補上再
-// 驗證. s 本身不被改寫 — 只用於判定真偽, 送往平台的仍是使用者輸入的原字串.
+// 驗證. s 本身不被改寫 - 只用於判定真偽, 送往平台的仍是使用者輸入的原字串.
 func isSemver(s string) bool {
 	if !strings.HasPrefix(s, "v") {
 		s = "v" + s
